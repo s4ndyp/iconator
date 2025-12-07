@@ -9,6 +9,12 @@ on:
 
 jobs:
   build_and_push:
+    # --- BELANGRIJKE FIX: PERMISSIES TOEVOEGEN ---
+    permissions:
+      contents: read
+      packages: write # Dit geeft de token toestemming om naar GHCR te pushen
+    # -----------------------------------------------
+
     # Voer de job uit op een Ubuntu runner
     runs-on: ubuntu-latest
     
@@ -32,8 +38,6 @@ jobs:
       - name: 🏷️ Define Image Tags for GHCR
         id: meta
         # Definieer de repository naam en tag format.
-        # ${{ github.repository_owner }} is de GitHub gebruikersnaam/organisatie.
-        # ${{ github.event.repository.name }} is de naam van de repo.
         run: |
           REPO_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
           TAG_SHA=$(echo ${{ github.sha }} | cut -c1-7)
