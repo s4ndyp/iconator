@@ -89,7 +89,7 @@
 
     const BACKEND_API_URL = '/api/upload-icon'; 
 
-    // --- Utility: Image Resizer ---
+    // --- Utility: Image Resizer (HERSTELD) ---
     const processImage = (file, size) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -97,10 +97,12 @@
                 const img = new Image();
                 img.onload = () => {
                     const fileName = file.name.split('.')[0].replace(/[-_]/g, '_') + '.png';
+
                     if (size === 'original') {
                         resolve({ blob: file, fileName });
                         return;
                     }
+
                     const canvas = document.createElement('canvas');
                     canvas.width = parseInt(size);
                     canvas.height = parseInt(size);
@@ -113,6 +115,7 @@
                     const y = (canvas.height - h) / 2;
 
                     ctx.drawImage(img, x, y, w, h);
+
                     canvas.toBlob((blob) => {
                         resolve({ blob, fileName });
                     }, 'image/png');
@@ -123,21 +126,19 @@
         });
     };
 
-    // --- Utility: Backend Communicatie ---
+    // --- Utility: Backend Communicatie (MET FIX) ---
     const uploadIconToServer = async (fileObject, metadata) => {
-        console.log('Start upload met metadata:', metadata);
+        console.log('Start upload:', metadata.iconName);
         
         const formData = new FormData();
-        // BELANGRIJK: Voeg EERST de tekstvelden toe, DAN pas het bestand.
-        // Dit lost het probleem op dat Multer de mapnaam niet kent tijdens het opslaan.
+        // BELANGRIJK: Tekstvelden EERST voor Multer
         formData.append('collectionId', metadata.collectionId);
         formData.append('collectionName', metadata.collectionName);
         formData.append('folderId', metadata.folderId);
         formData.append('folderName', metadata.folderName);
         formData.append('iconName', metadata.iconName);
         formData.append('iconTags', metadata.iconTags.join(','));
-        
-        // Bestand als laatste
+        // Bestand als LAATSTE
         formData.append('iconFile', fileObject.blob, fileObject.fileName);
 
         try {
@@ -175,7 +176,6 @@
         return <span ref={ref} {...props}><i data-lucide={name}></i></span>;
     };
 
-    // Icon wrappers
     const Search = (p) => <Icon name="search" {...p} />;
     const Plus = (p) => <Icon name="plus" {...p} />;
     const Download = (p) => <Icon name="download" {...p} />;
@@ -183,7 +183,6 @@
     const ImageIcon = (p) => <Icon name="image" {...p} />;
     const Trash2 = (p) => <Icon name="trash-2" {...p} />;
     const Folder = (p) => <Icon name="folder" {...p} />;
-    const FolderPlus = (p) => <Icon name="folder-plus" {...p} />;
     const LayoutGrid = (p) => <Icon name="layout-grid" {...p} />;
     const UploadCloud = (p) => <Icon name="upload-cloud" {...p} />;
     const X = (p) => <Icon name="x" {...p} />;
@@ -274,8 +273,9 @@
         );
     };
 
+    // --- UPLOAD MODAL (HERSTELD: Inclusief Tabs, Resize & Bulk) ---
     const UploadModal = ({ isOpen, onClose, onUpload, activeCollection, activeFolder }) => {
-        const [mode, setMode] = useState('single');
+        const [mode, setMode] = useState('single'); // 'single' or 'bulk'
         const [dragActive, setDragActive] = useState(false);
         const [isLoading, setIsLoading] = useState(false);
         
@@ -290,6 +290,7 @@
         const fileInputRef = useRef(null);
         const folderInputRef = useRef(null);
 
+        // Reset state on open
         useEffect(() => {
             if(isOpen) {
                 setMode('single');
@@ -305,6 +306,7 @@
 
         const activeCollectionName = activeCollection?.name || 'Onbekend';
 
+        // --- Single Upload Logic ---
         const handleSingleFile = (file) => {
             if (file && file.type.startsWith('image/')) {
                 const reader = new FileReader();
@@ -323,6 +325,7 @@
             setIsLoading(true);
 
             try {
+                // Resize logica (HERSTELD)
                 const fileForUpload = await processImage(fileObj, formData.size);
                 const tags = formData.tags.split(',').map(t => t.trim()).filter(t => t);
 
@@ -337,6 +340,7 @@
                 };
 
                 const result = await uploadIconToServer(fileForUpload, metadata);
+
                 onUpload([{ name: metadata.iconName, url: result.url, tags: tags }]);
                 onClose();
 
@@ -348,10 +352,56 @@
             }
         };
 
+        // --- Bulk Upload Logic (HERSTELD) ---
+        const handleBulkFiles = (files) => {
+            const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+            setBulkFiles(prev => [...prev, ...validFiles]);
+        };
+
+        const handleBulkSubmit = async () => {
+            if (bulkFiles.length === 0 || !activeCollection || !activeFolder) return;
+            setIsLoading(true);
+
+            try {
+                const results = await Promise.all(bulkFiles.map(async (file) => {
+                    // Bulk is altijd origineel formaat
+                    const fileForUpload = await processImage(file, 'original');
+                    const iconName = file.name.split('.')[0].replace(/[-_]/g, ' ');
+                    const tags = ['bulk-import'];
+
+                    const metadata = {
+                        collectionId: activeCollection.id,
+                        collectionName: activeCollection.name,
+                        folderId: activeFolder.id,
+                        folderName: activeFolder.name,
+                        iconName: iconName,
+                        iconTags: tags,
+                        size: 'original'
+                    };
+
+                    const result = await uploadIconToServer(fileForUpload, metadata);
+                    return { name: iconName, url: result.url, tags: tags };
+                }));
+
+                onUpload(results);
+                onClose();
+
+            } catch (error) {
+                console.error(error);
+                alert('Fout bij bulk upload: zie console voor details.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
         // --- Drag & Drop ---
         const handleDrop = (e) => {
             e.preventDefault(); e.stopPropagation(); setDragActive(false);
-            if (e.dataTransfer.files[0]) handleSingleFile(e.dataTransfer.files[0]);
+            if (mode === 'single') {
+                if (e.dataTransfer.files[0]) handleSingleFile(e.dataTransfer.files[0]);
+            } else {
+                handleBulkFiles(e.dataTransfer.files);
+            }
         };
 
         return (
@@ -376,56 +426,175 @@
                         <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
                     </div>
 
-                    <div className="p-6 overflow-y-auto custom-scrollbar">
-                        <div className="space-y-4">
-                            <div 
-                                className={`relative h-48 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors cursor-pointer
-                                    ${dragActive ? 'border-primary bg-primary/10' : 'border-slate-600 hover:border-slate-500 bg-dark'}
-                                    ${preview ? 'border-none p-0 overflow-hidden bg-transparent' : ''}`}
-                                onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
-                                onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
-                                onDragOver={(e) => { e.preventDefault(); }}
-                                onDrop={handleDrop}
-                                onClick={() => !preview && fileInputRef.current.click()}
-                            >
-                                {preview ? (
-                                    <div className="relative w-full h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYlWNgYGD4z8DAwMgwyoAOSMQAoQowAABWJgQD63K4OQAAAABJRU5ErkJggg==')]">
-                                        <img src={preview} alt="Preview" className="w-full h-full object-contain p-4" />
-                                        <button onClick={(e) => { e.stopPropagation(); setPreview(null); setFileObj(null); }} className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white shadow-lg hover:bg-red-600"><X size={16} /></button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <ImageIcon size={48} className="text-slate-500 mb-2" />
-                                        <p className="text-sm text-slate-400">Klik of sleep afbeelding</p>
-                                    </>
-                                )}
-                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleSingleFile(e.target.files[0])} />
-                            </div>
+                    {/* Tabs (HERSTELD) */}
+                    <div className="flex border-b border-slate-700">
+                        <button 
+                            onClick={() => setMode('single')} 
+                            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${mode === 'single' ? 'border-primary text-white bg-primary/5' : 'border-transparent text-slate-400 hover:text-white'}`}
+                        >
+                            Enkel Bestand
+                        </button>
+                        <button 
+                            onClick={() => setMode('bulk')} 
+                            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${mode === 'bulk' ? 'border-primary text-white bg-primary/5' : 'border-transparent text-slate-400 hover:text-white'}`}
+                        >
+                            Bulk Import (Folder)
+                        </button>
+                    </div>
 
+                    <div className="p-6 overflow-y-auto custom-scrollbar">
+                        
+                        {/* SINGLE MODE */}
+                        {mode === 'single' && (
                             <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
+                                <div 
+                                    className={`relative h-48 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors cursor-pointer
+                                        ${dragActive ? 'border-primary bg-primary/10' : 'border-slate-600 hover:border-slate-500 bg-dark'}
+                                        ${preview ? 'border-none p-0 overflow-hidden bg-transparent' : ''}`}
+                                    onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+                                    onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                                    onDragOver={(e) => { e.preventDefault(); }}
+                                    onDrop={handleDrop}
+                                    onClick={() => !preview && fileInputRef.current.click()}
+                                >
+                                    {preview ? (
+                                        <div className="relative w-full h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYlWNgYGD4z8DAwMgwyoAOSMQAoQowAABWJgQD63K4OQAAAABJRU5ErkJggg==')]">
+                                            <img src={preview} alt="Preview" className="w-full h-full object-contain p-4" />
+                                            <button onClick={(e) => { e.stopPropagation(); setPreview(null); setFileObj(null); }} className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white shadow-lg hover:bg-red-600"><X size={16} /></button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <ImageIcon size={48} className="text-slate-500 mb-2" />
+                                            <p className="text-sm text-slate-400">Klik of sleep afbeelding</p>
+                                        </>
+                                    )}
+                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleSingleFile(e.target.files[0])} />
+                                </div>
+
+                                <div className="space-y-4">
+                                    {/* Resize Opties (HERSTELD) */}
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Naam</label>
-                                        <input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-dark border border-slate-600 rounded-lg p-3 text-white focus:border-primary outline-none text-sm" />
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Formaat & Conversie</label>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {['original', '192', '512', '1024'].map(size => (
+                                                <button
+                                                    key={size}
+                                                    onClick={() => setFormData({...formData, size})}
+                                                    className={`px-2 py-2 rounded-lg text-xs font-medium border ${
+                                                        formData.size === size 
+                                                        ? 'bg-primary text-white border-primary' 
+                                                        : 'bg-dark text-slate-400 border-slate-700 hover:border-slate-500'
+                                                    }`}
+                                                >
+                                                    {size === 'original' ? 'Origineel' : `${size}x${size}`}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tags</label>
-                                        <input type="text" value={formData.tags} onChange={(e) => setFormData({...formData, tags: e.target.value})} placeholder="optioneel" className="w-full bg-dark border border-slate-600 rounded-lg p-3 text-white focus:border-primary outline-none text-sm" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Naam</label>
+                                            <input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-dark border border-slate-600 rounded-lg p-3 text-white focus:border-primary outline-none text-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tags</label>
+                                            <input type="text" value={formData.tags} onChange={(e) => setFormData({...formData, tags: e.target.value})} placeholder="optioneel" className="w-full bg-dark border border-slate-600 rounded-lg p-3 text-white focus:border-primary outline-none text-sm" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
+
+                        {/* BULK MODE (HERSTELD) */}
+                        {mode === 'bulk' && (
+                            <div className="space-y-4">
+                                <div 
+                                    className={`relative border-2 border-dashed rounded-xl flex flex-col items-center justify-center p-8 transition-colors
+                                        ${dragActive ? 'border-primary bg-primary/10' : 'border-slate-600 bg-dark'}`}
+                                    onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+                                    onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                                    onDragOver={(e) => { e.preventDefault(); }}
+                                    onDrop={handleDrop}
+                                >
+                                    <FileStack size={48} className="text-slate-500 mb-4" />
+                                    <div className="flex gap-3">
+                                        <button 
+                                            onClick={() => fileInputRef.current.click()} 
+                                            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-medium"
+                                        >
+                                            Selecteer Bestanden
+                                        </button>
+                                        <button 
+                                            onClick={() => folderInputRef.current.click()} 
+                                            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-medium flex items-center gap-2"
+                                        >
+                                            <FolderInput size={16} /> Selecteer Map
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-3">Of sleep bestanden hierheen</p>
+
+                                    {/* Hidden Inputs */}
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        className="hidden" 
+                                        multiple 
+                                        accept="image/*" 
+                                        onChange={(e) => handleBulkFiles(e.target.files)} 
+                                    />
+                                    <input 
+                                        type="file" 
+                                        ref={folderInputRef} 
+                                        className="hidden" 
+                                        webkitdirectory="" 
+                                        directory="" 
+                                        multiple 
+                                        onChange={(e) => handleBulkFiles(e.target.files)} 
+                                    />
+                                </div>
+
+                                {/* File List Preview */}
+                                {bulkFiles.length > 0 && (
+                                    <div className="bg-dark rounded-xl border border-slate-700 p-3 max-h-48 overflow-y-auto">
+                                        <div className="flex justify-between items-center mb-2 px-1">
+                                            <span className="text-xs font-bold text-slate-400">{bulkFiles.length} bestanden klaar voor import</span>
+                                            <button onClick={() => setBulkFiles([])} className="text-xs text-red-400 hover:underline">Wis alles</button>
+                                        </div>
+                                        <div className="space-y-1">
+                                            {bulkFiles.map((f, i) => (
+                                                <div key={i} className="flex items-center gap-2 text-sm text-slate-300 bg-slate-800/50 p-2 rounded">
+                                                    <Check size={14} className="text-green-500" />
+                                                    <span className="truncate flex-1">{f.name}</span>
+                                                    <span className="text-xs text-slate-500">{Math.round(f.size/1024)}KB</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                     </div>
 
                     <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex justify-end gap-3">
                         <button onClick={onClose} disabled={isLoading} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Annuleren</button>
-                        <button 
-                            onClick={handleSingleSubmit} 
-                            disabled={isLoading || !preview || !formData.name} 
-                            className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(isLoading || !preview || !formData.name) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
-                        >
-                            <Plus size={16} /> Opslaan
-                        </button>
+                        {mode === 'single' ? (
+                            <button 
+                                onClick={handleSingleSubmit} 
+                                disabled={isLoading || !preview || !formData.name} 
+                                className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(isLoading || !preview || !formData.name) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
+                            >
+                                <Plus size={16} /> Opslaan
+                            </button>
+                        ) : (
+                            <button 
+                                onClick={handleBulkSubmit} 
+                                disabled={isLoading || bulkFiles.length === 0} 
+                                className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(isLoading || bulkFiles.length === 0) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
+                            >
+                                <UploadCloud size={16} /> Importeer Alles
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -467,7 +636,6 @@
         );
     };
 
-    // Nieuw Component voor Create Card
     const CreateCollectionCard = ({ onClick }) => (
         <div 
             onClick={onClick}
