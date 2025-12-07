@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="nl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IconVault - Collectie Manager</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel voor JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts (Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        dark: '#0f172a',       // Slate 900
+                        dark_paper: '#1e293b', // Slate 800
+                        primary: '#6366f1',    // Indigo 500
+                        primary_hover: '#4f46e5',
+                        accent: '#8b5cf6'      // Violet 500
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569; 
+        }
+        
+        .hover-lift {
+            transition: all 0.2s ease-in-out;
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            border-color: #6366f1;
+        }
+
+        /* 2x2 Grid styling fix */
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: 2px;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // --- Icon Helper ---
+    const Icon = ({ name, size = 24, className, ...props }) => {
+        const ref = useRef(null);
+        useEffect(() => {
+            if (window.lucide) {
+                window.lucide.createIcons({
+                    root: ref.current,
+                    nameAttr: 'data-lucide',
+                    attrs: { width: size, height: size, class: className }
+                });
+            }
+        }, [name, size, className]);
+        return <span ref={ref} {...props}><i data-lucide={name}></i></span>;
+    };
+
+    // Icons
+    const Search = (p) => <Icon name="search" {...p} />;
+    const Plus = (p) => <Icon name="plus" {...p} />;
+    const Download = (p) => <Icon name="download" {...p} />;
+    const ArrowLeft = (p) => <Icon name="arrow-left" {...p} />;
+    const ImageIcon = (p) => <Icon name="image" {...p} />;
+    const Trash2 = (p) => <Icon name="trash-2" {...p} />;
+    const Folder = (p) => <Icon name="folder" {...p} />;
+    const LayoutGrid = (p) => <Icon name="layout-grid" {...p} />;
+    const UploadCloud = (p) => <Icon name="upload-cloud" {...p} />;
+    const X = (p) => <Icon name="x" {...p} />;
+    const Layers = (p) => <Icon name="layers" {...p} />;
+    const Briefcase = (p) => <Icon name="briefcase" {...p} />;
+    const Megaphone = (p) => <Icon name="megaphone" {...p} />;
+    const Monitor = (p) => <Icon name="monitor" {...p} />;
+    const Archive = (p) => <Icon name="archive" {...p} />;
+
+
+    // --- Mock Data ---
+    
+    // Niveau 1: Mappen (Folders)
+    const INITIAL_FOLDERS = [
+        { id: 'f1', name: "Design System", icon: "monitor" },
+        { id: 'f2', name: "Marketing", icon: "megaphone" },
+        { id: 'f3', name: "Administratie", icon: "briefcase" },
+        { id: 'f4', name: "Archief", icon: "archive" },
+    ];
+
+    // Niveau 2: Collecties (gekoppeld aan folderId)
+    const INITIAL_COLLECTIONS = [
+        { id: 'c1', folderId: 'f1', name: "Interface Assets", description: "UI elementen" },
+        { id: 'c2', folderId: 'f2', name: "Social Media", description: "Logos en shares" },
+        { id: 'c3', folderId: 'f3', name: "Kantoor Docs", description: "Mappen iconen" },
+        { id: 'c4', folderId: 'f1', name: "Netwerk", description: "Server icons" },
+        { id: 'c5', folderId: 'f2', name: "Campagne 2024", description: "Promo materiaal" },
+    ];
+
+    // Niveau 3: Iconen (gekoppeld aan collectionId)
+    const INITIAL_ICONS = [
+        { id: 1, collectionId: 'c1', name: "Dashboard Home", url: "https://cdn-icons-png.flaticon.com/512/1828/1828765.png", tags: ["ui", "home"] },
+        { id: 2, collectionId: 'c2', name: "User Profile", url: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png", tags: ["user", "account"] },
+        { id: 3, collectionId: 'c1', name: "Settings Gear", url: "https://cdn-icons-png.flaticon.com/512/2040/2040504.png", tags: ["settings", "config"] },
+        { id: 4, collectionId: 'c3', name: "Analytics Chart", url: "https://cdn-icons-png.flaticon.com/512/3094/3094851.png", tags: ["graph", "data"] },
+        { id: 5, collectionId: 'c4', name: "Cloud Sync", url: "https://cdn-icons-png.flaticon.com/512/4150/4150379.png", tags: ["cloud", "server"] },
+        { id: 6, collectionId: 'c3', name: "Email Envelope", url: "https://cdn-icons-png.flaticon.com/512/542/542689.png", tags: ["mail", "message"] },
+        { id: 7, collectionId: 'c1', name: "Search", url: "https://cdn-icons-png.flaticon.com/512/622/622669.png", tags: ["find", "ui"] },
+        { id: 8, collectionId: 'c2', name: "Like Heart", url: "https://cdn-icons-png.flaticon.com/512/833/833472.png", tags: ["social", "love"] },
+        { id: 9, collectionId: 'c1', name: "Menu Hamburger", url: "https://cdn-icons-png.flaticon.com/512/2976/2976215.png", tags: ["ui", "menu"] },
+    ];
+
+    // --- Components ---
+
+    const Sidebar = ({ folders, activeFolderId, onSelectFolder, onSelectAll }) => {
+        return (
+            <aside className="hidden md:flex flex-col w-64 h-screen bg-dark_paper border-r border-slate-700 fixed left-0 top-0 overflow-y-auto">
+                <div className="p-6 flex items-center gap-3 border-b border-slate-700/50">
+                    <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center text-white shadow-lg">
+                        <Layers size={20} />
+                    </div>
+                    <div>
+                        <h1 className="font-bold text-xl text-white tracking-tight">IconVault</h1>
+                        <p className="text-xs text-slate-400">Collectie Manager</p>
+                    </div>
+                </div>
+
+                <div className="p-4">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 px-2">Bibliotheek</div>
+                    <nav className="space-y-1">
+                        {/* Alle Collecties Knop */}
+                        <button 
+                            onClick={onSelectAll}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                                activeFolderId === null 
+                                ? 'bg-primary/10 text-primary border border-primary/20' 
+                                : 'text-slate-400 hover:bg-slate-800 hover:text-white border border-transparent'
+                            }`}
+                        >
+                            <LayoutGrid size={18} />
+                            Alle Collecties
+                        </button>
+
+                        <div className="pt-2 pb-2"></div>
+
+                        {/* Mappen Lijst */}
+                        {folders.map(folder => (
+                            <button 
+                                key={folder.id}
+                                onClick={() => onSelectFolder(folder.id)}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                                    activeFolderId === folder.id
+                                    ? 'bg-slate-800 text-white border border-slate-700' 
+                                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border border-transparent'
+                                }`}
+                            >
+                                <Icon name={folder.icon} size={18} />
+                                {folder.name}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+
+                <div className="mt-auto p-4 border-t border-slate-700/50">
+                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
+                                <span className="text-xs font-bold text-white">IV</span>
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-xs font-medium text-white">Pro Versie</div>
+                                <div className="text-[10px] text-slate-400">v2.1 • Online</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        );
+    };
+
+    const UploadModal = ({ isOpen, onClose, onUpload, activeCollectionName }) => {
+        const [dragActive, setDragActive] = useState(false);
+        const [preview, setPreview] = useState(null);
+        const [formData, setFormData] = useState({ name: '', tags: '' });
+        const fileInputRef = useRef(null);
+
+        if (!isOpen) return null;
+
+        const handleFile = (file) => {
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => setPreview(e.target.result);
+                reader.readAsDataURL(file);
+                const name = file.name.split('.')[0].replace(/[-_]/g, ' ');
+                setFormData(prev => ({ ...prev, name }));
+            }
+        };
+
+        const handleDrop = (e) => {
+            e.preventDefault(); e.stopPropagation(); setDragActive(false);
+            if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+        };
+
+        const handleSubmit = () => {
+            if (!preview || !formData.name) return;
+            const tagArray = formData.tags.split(',').map(t => t.trim()).filter(t => t);
+            onUpload({ name: formData.name, url: preview, tags: tagArray });
+            setPreview(null); setFormData({ name: '', tags: '' });
+            onClose();
+        };
+
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-dark_paper w-full max-w-lg rounded-2xl border border-slate-600 shadow-2xl overflow-hidden">
+                    <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+                        <div>
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <UploadCloud className="text-primary" size={24} />
+                                Icoon Uploaden
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-1">Wordt toegevoegd aan: <span className="text-primary font-bold">{activeCollectionName}</span></p>
+                        </div>
+                        <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                    </div>
+
+                    <div className="p-6 space-y-4">
+                        <div 
+                            className={`relative h-48 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors cursor-pointer
+                                ${dragActive ? 'border-primary bg-primary/10' : 'border-slate-600 hover:border-slate-500 bg-dark'}
+                                ${preview ? 'border-none p-0 overflow-hidden' : ''}`}
+                            onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                            onDragOver={(e) => { e.preventDefault(); }}
+                            onDrop={handleDrop}
+                            onClick={() => !preview && fileInputRef.current.click()}
+                        >
+                            {preview ? (
+                                <div className="relative w-full h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYlWNgYGD4z8DAwMgwyoAOSMQAoQowAABWJgQD63K4OQAAAABJRU5ErkJggg==')]">
+                                    <img src={preview} alt="Preview" className="w-full h-full object-contain p-4" />
+                                    <button onClick={(e) => { e.stopPropagation(); setPreview(null); }} className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white shadow-lg hover:bg-red-600"><X size={16} /></button>
+                                </div>
+                            ) : (
+                                <>
+                                    <ImageIcon size={48} className="text-slate-500 mb-2" />
+                                    <p className="text-sm text-slate-400">Klik of sleep afbeelding</p>
+                                </>
+                            )}
+                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleFile(e.target.files[0])} />
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Naam</label>
+                                <input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-dark border border-slate-600 rounded-lg p-3 text-white focus:border-primary outline-none text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tags</label>
+                                <input type="text" value={formData.tags} onChange={(e) => setFormData({...formData, tags: e.target.value})} placeholder="bv. plat, rood" className="w-full bg-dark border border-slate-600 rounded-lg p-3 text-white focus:border-primary outline-none text-sm" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex justify-end gap-3">
+                        <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Annuleren</button>
+                        <button onClick={handleSubmit} disabled={!preview || !formData.name} className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(!preview || !formData.name) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}>
+                            <Plus size={16} /> Opslaan
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const CollectionCard = ({ collection, icons, onClick }) => {
+        // Grab first 4 icons for preview and ensure we have placeholders if less than 4
+        // to maintain grid structure (optional, but 4 looks best)
+        const previewIcons = icons.slice(0, 4);
+
+        return (
+            <div 
+                onClick={onClick}
+                className="hover-lift bg-dark_paper border border-slate-700 rounded-2xl p-4 flex flex-col cursor-pointer group h-auto"
+            >
+                {/* Fix: Forced Aspect Ratio Square for the Preview Box 
+                   This ensures exactly 4 items fit in a 2x2 grid perfectly 
+                */}
+                <div className="w-full aspect-square mb-3 bg-dark rounded-xl overflow-hidden p-1 relative">
+                    {icons.length > 0 ? (
+                        <div className="folder-grid w-full h-full">
+                            {previewIcons.map(icon => (
+                                <div key={icon.id} className="bg-slate-800/50 rounded flex items-center justify-center p-2 overflow-hidden">
+                                    <img src={icon.url} className="w-full h-full object-contain opacity-90" />
+                                </div>
+                            ))}
+                            {/* Fill empty spots if less than 4 to keep grid nice? Not strictly needed with CSS grid but looks better */}
+                            {[...Array(Math.max(0, 4 - previewIcons.length))].map((_, i) => (
+                                <div key={`empty-${i}`} className="bg-slate-800/30 rounded"></div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <ImageIcon size={32} />
+                        </div>
+                    )}
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                        <span className="bg-primary text-white text-xs px-3 py-1.5 rounded-full font-bold shadow-lg">Openen</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-auto">
+                    <div>
+                        <h3 className="font-bold text-slate-200 text-sm truncate w-24 md:w-32">{collection.name}</h3>
+                        <p className="text-[10px] text-slate-500">{icons.length} iconen</p>
+                    </div>
+                    <Folder className="text-slate-600 group-hover:text-primary transition-colors" size={20} />
+                </div>
+            </div>
+        );
+    };
+
+    const IconCard = ({ icon, onDelete }) => {
+        const handleDownload = (e) => {
+            e.stopPropagation();
+            const link = document.createElement('a');
+            link.href = icon.url;
+            link.download = `${icon.name.replace(/\s+/g, '_')}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        return (
+            <div className="hover-lift bg-dark_paper border border-slate-700 rounded-xl overflow-hidden relative group flex flex-col h-32">
+                <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-1">
+                    <button onClick={() => onDelete(icon.id)} className="p-1 bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded">
+                        <Trash2 size={12} />
+                    </button>
+                </div>
+
+                <div className="flex-1 p-2 flex items-center justify-center bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYlWNgYGD4z8DAwMgwyoAOSMQAoQowAABWJgQD63K4OQAAAABJRU5ErkJggg==')] bg-repeat relative">
+                    <div className="absolute inset-0 bg-dark_paper/60"></div>
+                    <img src={icon.url} alt={icon.name} className="w-10 h-10 md:w-12 md:h-12 object-contain relative z-10 drop-shadow-md transition-transform group-hover:scale-110" />
+                </div>
+
+                <div className="p-2 bg-dark_paper border-t border-slate-700 flex justify-between items-center">
+                    <h3 className="font-medium text-slate-300 text-xs truncate max-w-[70%]" title={icon.name}>{icon.name}</h3>
+                    <button onClick={handleDownload} className="text-primary hover:text-white transition-colors" title="Downloaden">
+                        <Download size={14} />
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    const App = () => {
+        const [folders, setFolders] = useState(INITIAL_FOLDERS);
+        const [collections, setCollections] = useState(INITIAL_COLLECTIONS);
+        const [icons, setIcons] = useState(INITIAL_ICONS);
+        
+        // Navigation State
+        const [activeFolderId, setActiveFolderId] = useState(null); // null = Alle mappen/collecties
+        const [activeCollectionId, setActiveCollectionId] = useState(null); // null = Geen specifieke collectie open
+        const [searchQuery, setSearchQuery] = useState('');
+        const [isUploadOpen, setIsUploadOpen] = useState(false);
+
+        // State reset helpers
+        const resetToRoot = () => {
+            setActiveFolderId(null);
+            setActiveCollectionId(null);
+            setSearchQuery('');
+        };
+
+        const selectFolder = (folderId) => {
+            setActiveFolderId(folderId);
+            setActiveCollectionId(null); // Close collection if changing folder
+            setSearchQuery('');
+        };
+
+        // Derived Data
+        const isSearching = searchQuery.length > 0;
+        const activeCollection = collections.find(c => c.id === activeCollectionId);
+        const activeFolder = folders.find(f => f.id === activeFolderId);
+
+        // Filter Logic
+        const filteredGlobalIcons = useMemo(() => {
+            if (!isSearching) return [];
+            const q = searchQuery.toLowerCase();
+            return icons.filter(i => i.name.toLowerCase().includes(q) || i.tags.some(t => t.toLowerCase().includes(q)));
+        }, [icons, searchQuery, isSearching]);
+
+        const displayedCollections = useMemo(() => {
+            if (activeFolderId) {
+                return collections.filter(c => c.folderId === activeFolderId);
+            }
+            return collections; // Show all if no folder selected
+        }, [collections, activeFolderId]);
+
+        const collectionIcons = useMemo(() => {
+            if (!activeCollectionId) return [];
+            return icons.filter(i => i.collectionId === activeCollectionId);
+        }, [icons, activeCollectionId]);
+
+        // Handlers
+        const handleUpload = (newIcon) => {
+            if (!activeCollectionId) return;
+            const iconObject = { id: Date.now(), collectionId: activeCollectionId, ...newIcon };
+            setIcons(prev => [iconObject, ...prev]);
+        };
+
+        const handleDeleteIcon = (id) => {
+            if(confirm('Verwijderen?')) setIcons(prev => prev.filter(i => i.id !== id));
+        };
+
+        return (
+            <div className="flex h-screen bg-dark text-slate-200 font-sans selection:bg-primary selection:text-white">
+                <Sidebar 
+                    folders={folders} 
+                    activeFolderId={activeFolderId} 
+                    onSelectFolder={selectFolder}
+                    onSelectAll={resetToRoot} 
+                />
+
+                <main className="flex-1 md:ml-64 flex flex-col h-full overflow-hidden relative">
+                    {/* Header */}
+                    <header className="sticky top-0 z-20 bg-dark/80 backdrop-blur-md border-b border-slate-700/50 p-4 md:p-6">
+                        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div>
+                                <h2 className="text-2xl font-bold text-white tracking-tight">
+                                    {isSearching ? 'Zoekresultaten' : (
+                                        activeCollection ? activeCollection.name : 
+                                        (activeFolder ? activeFolder.name : 'Alle Collecties')
+                                    )}
+                                </h2>
+                                <p className="text-slate-400 text-sm hidden md:block">
+                                    {isSearching 
+                                        ? `Gevonden: ${filteredGlobalIcons.length} iconen` 
+                                        : (activeCollection ? activeCollection.description : 
+                                           (activeFolder ? `Map: ${activeFolder.name}` : 'Overzicht van alle collecties in bibliotheek'))}
+                                </p>
+                            </div>
+
+                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                <div className="relative flex-1 md:w-80 group">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors" size={18} />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Zoek icoon..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full bg-dark_paper border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder-slate-500"
+                                    />
+                                    {searchQuery && (
+                                        <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X size={14} /></button>
+                                    )}
+                                </div>
+                                
+                                {activeCollection && !isSearching && (
+                                    <button 
+                                        onClick={() => setIsUploadOpen(true)}
+                                        className="bg-primary hover:bg-primary_hover text-white p-2.5 md:px-4 md:py-2.5 rounded-xl shadow-lg transition-all flex items-center gap-2 font-medium whitespace-nowrap"
+                                    >
+                                        <Plus size={20} />
+                                        <span className="hidden md:inline">Nieuw Icoon</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Content Area */}
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth">
+                        <div className="max-w-7xl mx-auto">
+                            
+                            {/* VIEW 1: SEARCH RESULTS */}
+                            {isSearching && (
+                                <div>
+                                    {filteredGlobalIcons.length === 0 ? (
+                                        <div className="text-center py-20 text-slate-500">
+                                            <p>Geen resultaten gevonden voor "{searchQuery}"</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                                            {filteredGlobalIcons.map(icon => (
+                                                <IconCard key={icon.id} icon={icon} onDelete={handleDeleteIcon} />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* VIEW 2: INSIDE COLLECTION (Icons) */}
+                            {!isSearching && activeCollection && (
+                                <div>
+                                    <button onClick={() => setActiveCollectionId(null)} className="mb-4 flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+                                        <ArrowLeft size={16} /> Terug naar {activeFolder ? activeFolder.name : 'overzicht'}
+                                    </button>
+                                    
+                                    {collectionIcons.length === 0 ? (
+                                        <div className="border-2 border-dashed border-slate-700 rounded-2xl p-10 text-center">
+                                            <p className="text-slate-500 mb-4">Deze collectie is nog leeg.</p>
+                                            <button onClick={() => setIsUploadOpen(true)} className="text-primary hover:underline">Upload je eerste icoon</button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                                            {collectionIcons.map(icon => (
+                                                <IconCard key={icon.id} icon={icon} onDelete={handleDeleteIcon} />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* VIEW 3: FOLDER/ROOT VIEW (List of Collections) */}
+                            {!isSearching && !activeCollection && (
+                                <div>
+                                    {displayedCollections.length === 0 ? (
+                                        <div className="text-center py-20 text-slate-500">
+                                            <FolderOpen size={48} className="mx-auto mb-3 opacity-50" />
+                                            <p>Geen collecties gevonden in deze map.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
+                                            {displayedCollections.map(col => {
+                                                const colIcons = icons.filter(i => i.collectionId === col.id);
+                                                return (
+                                                    <CollectionCard 
+                                                        key={col.id} 
+                                                        collection={col} 
+                                                        icons={colIcons} 
+                                                        onClick={() => setActiveCollectionId(col.id)} 
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                </main>
+
+                <UploadModal 
+                    isOpen={isUploadOpen} 
+                    onClose={() => setIsUploadOpen(false)} 
+                    onUpload={handleUpload}
+                    activeCollectionName={activeCollection?.name}
+                />
+            </div>
+        );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+</script>
+
+</body>
+</html>
