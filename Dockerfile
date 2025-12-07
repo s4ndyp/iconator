@@ -2,39 +2,43 @@
 # Gebruik een Node.js Long Term Support (LTS) versie als basis
 FROM node:lts-alpine as dependency_installer
 
-# Stel de werkdirectory in
+# Stel de werkdirectory in de container in
 WORKDIR /app
 
-# Kopieer package.json en package-lock.json om caching van node_modules te maximaliseren
+# Kopieer package.json en package-lock.json EERST.
+# Dit is slim voor Docker caching: als je code verandert maar je dependencies niet,
+# hoeft Docker deze stap niet opnieuw te doen.
 COPY package*.json ./
 
-# Installeer de Node.js afhankelijkheden (express en multer)
+# Installeer de Node.js afhankelijkheden (express, multer, cors, archiver)
+# --omit=dev zorgt ervoor dat we geen onnodige development tools installeren, wat de image kleiner houdt.
 RUN npm install --omit=dev
 
 # STAGE 2: Productie Image
-# Gebruik een schone, kleine Alpine-gebaseerde Node.js runtime image
+# We beginnen opnieuw met een schone, kleine Alpine image om de eindgrootte minimaal te houden.
 FROM node:lts-alpine
 
 # Stel de werkdirectory in
 WORKDIR /app
 
-# Kopieer de geïnstalleerde node_modules van Stage 1
+# Kopieer de 'schone' node_modules map van Stage 1 naar deze image
 COPY --from=dependency_installer /app/node_modules ./node_modules
 
-# Kopieer de rest van de applicatiebestanden:
-# 1. De server logica
+# Kopieer de applicatie broncode:
+# 1. De server logica (backend)
 COPY server.js .
-# 2. De statische frontend bestanden (index.html, etc.)
+
+# 2. De frontend bestanden (HTML, CSS, JS) naar de publieke map
 COPY public ./public
-# 3. De uploads map is nodig zodat Multer de doelmap kan aanmaken
-# Hoewel de map leeg is, definieert dit de structuur voor Multer.
+
+# 3. CRUCIAAL VOOR DE UPDATE: Maak de opslagmappen aan
+# - 'uploads': Hier slaat Multer de plaatjes op
+# - 'data': Hier komt de nieuwe database (db.json) te staan
 RUN mkdir -p uploads
+RUN mkdir -p data
 
-# Zorg ervoor dat de 'uploads' map bestaat, dit wordt gebruikt door server.js
-# De map 'uploads' is de plek waar de iconen zullen worden opgeslagen in de container.
-
-# De poort die door Express (server.js) wordt gebruikt
+# De poort die door Express (server.js) wordt gebruikt openzetten
 EXPOSE 3000
 
-# Definieer het commando om de applicatie te starten
+# Het startcommando: start de Node.js server
 CMD ["node", "server.js"]
