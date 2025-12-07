@@ -88,7 +88,7 @@
 <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
 
-    // TODO: VERVANG DIT DOOR HET ECHTE BACKEND ENDPOINT VOOR UPLOADS
+    // API Endpoint config
     const BACKEND_API_URL = '/api/upload-icon'; 
 
     // --- Utility: Image Resizer (geeft nu een Blob terug voor upload) ---
@@ -131,7 +131,7 @@
         });
     };
 
-    // --- Utility: Backend Communicatie ---
+    // --- Utility: Backend Communicatie (FIXED) ---
     const uploadIconToServer = async (fileObject, metadata) => {
         console.log('Start upload naar backend:', metadata.fileName);
         
@@ -144,28 +144,26 @@
         formData.append('iconName', metadata.iconName);
         formData.append('iconTags', metadata.iconTags.join(','));
 
-        // Mock fetch voor demonstratie in Canvas, vervang dit op de webserver!
         try {
-            // Op je echte server, vervang dit met een echte fetch:
-            /*
+            // Echte fetch naar de backend
             const response = await fetch(BACKEND_API_URL, {
                 method: 'POST',
                 body: formData,
             });
-            if (!response.ok) throw new Error('Upload mislukt op de server.');
-            const data = await response.json();
-            // De backend moet de uiteindelijke URL van het opgeslagen icoon teruggeven
-            return { url: data.iconUrl || `/icons/${metadata.folderName}/${metadata.collectionName}/${fileObject.fileName}` };
-            */
 
-            // --- Mock Success Response in Canvas (voor demo) ---
-            await new Promise(r => setTimeout(r, 1000)); // Simulatie van netwerklatentie
-            const mockUrl = `https://placehold.co/100x100/374151/FFFFFF/png?text=${metadata.iconName.substring(0, 3).toUpperCase()}`;
-            return { url: mockUrl };
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Upload mislukt op de server.');
+            }
+
+            const data = await response.json();
+            
+            // Gebruik de URL die de server teruggeeft
+            return { url: data.iconUrl };
 
         } catch (error) {
             console.error('Fout bij upload:', error);
-            throw new Error(`Upload mislukt: ${error.message}`);
+            throw error; // Gooi error door naar UI voor afhandeling
         }
     };
 
@@ -223,16 +221,11 @@
         { id: 'c5', folderId: 'f2', name: "Campagne 2024", description: "Promo materiaal" },
     ];
 
+    // Je kunt hier beginnen met een lege lijst of de mock data laten staan
     const INITIAL_ICONS = [
         { id: 1, collectionId: 'c1', name: "Dashboard Home", url: "https://cdn-icons-png.flaticon.com/512/1828/1828765.png", tags: ["ui", "home"] },
         { id: 2, collectionId: 'c2', name: "User Profile", url: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png", tags: ["user", "account"] },
         { id: 3, collectionId: 'c1', name: "Settings Gear", url: "https://cdn-icons-png.flaticon.com/512/2040/2040504.png", tags: ["settings", "config"] },
-        { id: 4, collectionId: 'c3', name: "Analytics Chart", url: "https://cdn-icons-png.flaticon.com/512/3094/3094851.png", tags: ["graph", "data"] },
-        { id: 5, collectionId: 'c4', name: "Cloud Sync", url: "https://cdn-icons-png.flaticon.com/512/4150/4150379.png", tags: ["cloud", "server"] },
-        { id: 6, collectionId: 'c3', name: "Email Envelope", url: "https://cdn-icons-png.flaticon.com/512/542/542689.png", tags: ["mail", "message"] },
-        { id: 7, collectionId: 'c1', name: "Search", url: "https://cdn-icons-png.flaticon.com/512/622/622669.png", tags: ["find", "ui"] },
-        { id: 8, collectionId: 'c2', name: "Like Heart", url: "https://cdn-icons-png.flaticon.com/512/833/833472.png", tags: ["social", "love"] },
-        { id: 9, collectionId: 'c1', name: "Menu Hamburger", url: "https://cdn-icons-png.flaticon.com/512/2976/2976215.png", tags: ["ui", "menu"] },
     ];
 
     // --- Components ---
@@ -370,7 +363,7 @@
             } catch (error) {
                 console.error(error);
                 // In een echte app: toon foutmelding aan gebruiker
-                alert('Fout bij upload: zie console voor details.'); 
+                alert('Fout bij upload: ' + error.message); 
             } finally {
                 setIsLoading(false);
             }
