@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
 const crypto = require('crypto');
+// Archiver niet meer nodig voor Smart Export (gebeurt nu client-side), maar kan blijven voor legacy
 const archiver = require('archiver');
 
 const app = express();
@@ -50,8 +51,7 @@ const storage = multer.diskStorage({
         cb(null, targetDir);
     },
     filename: (req, file, cb) => {
-        // We slaan op met een tijdelijke naam, de definitieve logica zit in de route handler
-        // zodat we duplicates kunnen checken voordat we definitief bevestigen
+        // Tijdelijke naam, wordt hernoemd na uniek-check
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
@@ -63,23 +63,29 @@ const upload = multer({ storage: storage });
 
 app.get('/api/data', (req, res) => res.json(db));
 
-// Upload Route met Unieke Naam Check
+// Upload Route met STRICTE Unieke Naam Check
 app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'Geen bestand.' });
 
     const desiredName = req.body.iconName || req.file.originalname;
     
-    // CHECK: Unieke naam in de hele database (om verwarring bij API gebruik te voorkomen)
-    // Of wil je uniek per collectie? Meestal is uniek per systeem beter voor een API.
+    // CHECK: Unieke naam in hele database
+    // Case-insensitive check
     const exists = db.icons.find(i => i.name.toLowerCase() === desiredName.toLowerCase());
 
     if (exists) {
-        // VERWIJDER het bestand direct weer, want we accepteren het niet
-        fs.unlinkSync(req.file.path);
+        // CRITICAl: Upload is al gebeurd door Multer naar temp naam.
+        // We MOETEN dit bestand nu verwijderen.
+        try {
+            fs.unlinkSync(req.file.path);
+        } catch (e) {
+            console.error("Fout bij verwijderen duplicate bestand", e);
+        }
+        console.log(`Upload geweigerd: ${desiredName} bestaat al.`);
         return res.status(409).json({ message: `De naam '${desiredName}' bestaat al. Kies een unieke naam.` });
     }
 
-    // Hernoem bestand naar de nette naam
+    // Hernoem bestand naar nette naam
     const dir = path.dirname(req.file.path);
     const ext = path.extname(req.file.originalname);
     const safeFilename = desiredName.replace(/[^a-z0-9]/gi, '_').toLowerCase() + ext;
@@ -97,8 +103,8 @@ app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
     const newIcon = {
         id: Date.now().toString(),
         collectionId: req.body.collectionId,
-        name: desiredName, // De display naam
-        filename: safeFilename, // De technische naam
+        name: desiredName,
+        filename: safeFilename,
         tags: req.body.iconTags ? req.body.iconTags.split(',') : [],
         url: iconUrl,
         filePath: newPath,
@@ -144,7 +150,7 @@ app.delete('/api/icons/:id', (req, res) => {
     }
 });
 
-// Serve Icon API (Voor externe apps)
+// Serve Icon API
 app.get('/api/serve-icon/:name', (req, res) => {
     const searchName = req.params.name.toLowerCase();
     const icon = db.icons.find(i => i.name.toLowerCase().replace(/[^a-z0-9]/gi, '_') === searchName);
@@ -154,19 +160,6 @@ app.get('/api/serve-icon/:name', (req, res) => {
     } else {
         res.status(404).send('Icoon niet gevonden.');
     }
-});
-
-// Server-side ZIP (alleen voor opgeslagen items als backup)
-// De "Smart Generator" doen we in de frontend om server load te besparen
-app.get('/api/download-zip/:id', (req, res) => {
-    const icon = db.icons.find(i => i.id === req.params.id);
-    if (!icon) return res.status(404).send('Niet gevonden');
-
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    res.attachment(`${icon.name}_backup.zip`);
-    archive.pipe(res);
-    archive.file(icon.filePath, { name: path.basename(icon.filePath) });
-    archive.finalize();
 });
 
 app.listen(PORT, () => {
