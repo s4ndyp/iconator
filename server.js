@@ -3,8 +3,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const crypto = require('crypto'); // Voor hash/duplicaat check
-const archiver = require('archiver'); // Voor ZIP downloads
+const crypto = require('crypto');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = 3000;
@@ -21,49 +21,26 @@ app.use(express.json());
 app.use(express.static('public'));
 app.use('/uploads', express.static(UPLOAD_ROOT_DIR));
 
-// --- SIMPLE JSON DATABASE SYSTEM (Feature 1) ---
+// --- DATABASE ---
 let db = { folders: [], collections: [], icons: [] };
 
-// Initialiseer DB met default data als hij leeg is
 function loadDB() {
     if (fs.existsSync(DB_FILE)) {
         try {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             db = JSON.parse(data);
-        } catch (e) {
-            console.error("Fout bij laden DB, start nieuw.", e);
-        }
+        } catch (e) { console.error("DB Load Error", e); }
     } else {
-        // Default structuur
-        db.folders = [
-            { id: 'f1', name: "Design System", icon: "monitor" },
-            { id: 'f2', name: "Marketing", icon: "megaphone" }
-        ];
-        db.collections = [
-            { id: 'c1', folderId: 'f1', name: "General UI", description: "Basis elementen" }
-        ];
+        // Defaults
+        db.folders = [{ id: 'f1', name: "Demo Map", icon: "folder" }];
+        db.collections = [{ id: 'c1', folderId: 'f1', name: "General", description: "Start collectie" }];
         saveDB();
     }
 }
+function saveDB() { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
+loadDB();
 
-function saveDB() {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-loadDB(); // Starten
-
-// --- HELPER: Bereken File Hash (Feature 14) ---
-function getFileHash(filePath) {
-    return new Promise((resolve, reject) => {
-        const hash = crypto.createHash('md5');
-        const stream = fs.createReadStream(filePath);
-        stream.on('data', (data) => hash.update(data));
-        stream.on('end', () => resolve(hash.digest('hex')));
-        stream.on('error', reject);
-    });
-}
-
-// --- MULTER CONFIG ---
+// --- MULTER ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const folderName = req.body.folderName ? req.body.folderName.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'unsorted';
@@ -73,78 +50,71 @@ const storage = multer.diskStorage({
         cb(null, targetDir);
     },
     filename: (req, file, cb) => {
-        const rawName = req.body.iconName || file.originalname.split('.')[0];
-        const safeName = rawName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const ext = path.extname(file.originalname);
-        cb(null, `${safeName}-${Date.now()}${ext}`);
+        // We slaan op met een tijdelijke naam, de definitieve logica zit in de route handler
+        // zodat we duplicates kunnen checken voordat we definitief bevestigen
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
 
-// SVG Toestaan (Feature 2)
-const upload = multer({ 
-    storage: storage,
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/') || file.mimetype === 'image/svg+xml') {
-            cb(null, true);
-        } else {
-            cb(new Error('Alleen afbeeldingen (JPG, PNG, SVG) zijn toegestaan.'));
-        }
+const upload = multer({ storage: storage });
+
+// --- ROUTES ---
+
+app.get('/api/data', (req, res) => res.json(db));
+
+// Upload Route met Unieke Naam Check
+app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
+    if (!req.file) return res.status(400).json({ message: 'Geen bestand.' });
+
+    const desiredName = req.body.iconName || req.file.originalname;
+    
+    // CHECK: Unieke naam in de hele database (om verwarring bij API gebruik te voorkomen)
+    // Of wil je uniek per collectie? Meestal is uniek per systeem beter voor een API.
+    const exists = db.icons.find(i => i.name.toLowerCase() === desiredName.toLowerCase());
+
+    if (exists) {
+        // VERWIJDER het bestand direct weer, want we accepteren het niet
+        fs.unlinkSync(req.file.path);
+        return res.status(409).json({ message: `De naam '${desiredName}' bestaat al. Kies een unieke naam.` });
     }
-});
 
-// --- API ROUTES ---
-
-// 1. Data Ophalen
-app.get('/api/data', (req, res) => {
-    res.json(db);
-});
-
-// 2. Uploaden (Met Hash check & DB update)
-app.post('/api/upload-icon', upload.single('iconFile'), async (req, res) => {
-    if (!req.file) return res.status(400).json({ success: false, message: 'Geen bestand.' });
+    // Hernoem bestand naar de nette naam
+    const dir = path.dirname(req.file.path);
+    const ext = path.extname(req.file.originalname);
+    const safeFilename = desiredName.replace(/[^a-z0-9]/gi, '_').toLowerCase() + ext;
+    const newPath = path.join(dir, safeFilename);
 
     try {
-        const hash = await getFileHash(req.file.path);
-
-        // Feature 14: Duplicaat Check
-        const existing = db.icons.find(i => i.hash === hash && i.collectionId === req.body.collectionId);
-        if (existing) {
-            // Verwijder het zojuist geuploade bestand weer, want we hebben hem al
-            fs.unlinkSync(req.file.path);
-            return res.status(409).json({ success: false, message: 'Dit bestand bestaat al in deze collectie.', existingIcon: existing });
-        }
-
-        const relativePath = path.relative(UPLOAD_ROOT_DIR, req.file.path);
-        const iconUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-
-        const newIcon = {
-            id: Date.now().toString(),
-            collectionId: req.body.collectionId,
-            name: req.body.iconName,
-            tags: req.body.iconTags ? req.body.iconTags.split(',') : [],
-            url: iconUrl,
-            filePath: req.file.path, // Voor interne bewerkingen/zipping
-            hash: hash,
-            width: req.body.width,
-            height: req.body.height,
-            color: req.body.color, // Feature 18
-            size: req.file.size,
-            mime: req.file.mimetype,
-            dateAdded: new Date().toISOString()
-        };
-
-        db.icons.push(newIcon);
-        saveDB();
-
-        res.json({ success: true, icon: newIcon });
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: 'Server fout.' });
+        fs.renameSync(req.file.path, newPath);
+    } catch(e) {
+        return res.status(500).json({ message: 'Fout bij opslaan bestand.' });
     }
+
+    const relativePath = path.relative(UPLOAD_ROOT_DIR, newPath);
+    const iconUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+
+    const newIcon = {
+        id: Date.now().toString(),
+        collectionId: req.body.collectionId,
+        name: desiredName, // De display naam
+        filename: safeFilename, // De technische naam
+        tags: req.body.iconTags ? req.body.iconTags.split(',') : [],
+        url: iconUrl,
+        filePath: newPath,
+        width: parseInt(req.body.width),
+        height: parseInt(req.body.height),
+        color: req.body.color,
+        size: req.file.size,
+        dateAdded: new Date().toISOString()
+    };
+
+    db.icons.push(newIcon);
+    saveDB();
+
+    res.json({ success: true, icon: newIcon });
 });
 
-// 3. Nieuwe Map/Collectie
 app.post('/api/folders', (req, res) => {
     const newFolder = { id: `f${Date.now()}`, name: req.body.name, icon: 'folder' };
     db.folders.push(newFolder);
@@ -153,69 +123,52 @@ app.post('/api/folders', (req, res) => {
 });
 
 app.post('/api/collections', (req, res) => {
-    const newCol = { 
-        id: `c${Date.now()}`, 
-        folderId: req.body.folderId, 
-        name: req.body.name, 
-        description: req.body.description || '' 
-    };
+    const newCol = { id: `c${Date.now()}`, folderId: req.body.folderId, name: req.body.name, description: req.body.description };
     db.collections.push(newCol);
     saveDB();
     res.json(newCol);
 });
 
-// 4. Verwijderen
 app.delete('/api/icons/:id', (req, res) => {
-    const iconIndex = db.icons.findIndex(i => i.id === req.params.id);
-    if (iconIndex > -1) {
-        const icon = db.icons[iconIndex];
-        // Feature 6 (Prullenbak) - Voor nu doen we een hard delete van disk om ruimte te besparen
-        // In productie zou je een 'deletedAt' veld zetten.
-        try {
-            if (fs.existsSync(icon.filePath)) fs.unlinkSync(icon.filePath);
-        } catch(e) { console.error("Kon bestand niet wissen", e); }
-        
-        db.icons.splice(iconIndex, 1);
+    const idx = db.icons.findIndex(i => i.id === req.params.id);
+    if (idx > -1) {
+        const icon = db.icons[idx];
+        if (fs.existsSync(icon.filePath)) {
+            try { fs.unlinkSync(icon.filePath); } catch(e) {}
+        }
+        db.icons.splice(idx, 1);
         saveDB();
         res.json({ success: true });
     } else {
-        res.status(404).json({ success: false });
+        res.status(404).json({ message: 'Niet gevonden' });
     }
 });
 
-// Feature 5: Download ZIP pakket
-app.get('/api/download-zip/:iconId', (req, res) => {
-    const icon = db.icons.find(i => i.id === req.params.iconId);
-    if (!icon || !fs.existsSync(icon.filePath)) return res.status(404).send('Icoon niet gevonden');
-
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    
-    res.attachment(`${icon.name.replace(/\s+/g, '_')}_package.zip`);
-    archive.pipe(res);
-
-    // Voeg origineel toe
-    archive.file(icon.filePath, { name: `original${path.extname(icon.filePath)}` });
-
-    // In een echte app zou je hier 'sharp' gebruiken om te resizen.
-    // Omdat we geen native modules willen, voegen we een readme toe.
-    archive.append('Gegenereerd door IconVault.\n', { name: 'info.txt' });
-
-    archive.finalize();
-});
-
-// Serve Icon Route (Externe API)
+// Serve Icon API (Voor externe apps)
 app.get('/api/serve-icon/:name', (req, res) => {
     const searchName = req.params.name.toLowerCase();
-    const icon = db.icons.find(i => i.name.toLowerCase().replace(/\s+/g, '_') === searchName);
+    const icon = db.icons.find(i => i.name.toLowerCase().replace(/[^a-z0-9]/gi, '_') === searchName);
+    
     if (icon && fs.existsSync(icon.filePath)) {
         res.sendFile(icon.filePath);
     } else {
-        res.status(404).send('Niet gevonden');
+        res.status(404).send('Icoon niet gevonden.');
     }
 });
 
+// Server-side ZIP (alleen voor opgeslagen items als backup)
+// De "Smart Generator" doen we in de frontend om server load te besparen
+app.get('/api/download-zip/:id', (req, res) => {
+    const icon = db.icons.find(i => i.id === req.params.id);
+    if (!icon) return res.status(404).send('Niet gevonden');
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    res.attachment(`${icon.name}_backup.zip`);
+    archive.pipe(res);
+    archive.file(icon.filePath, { name: path.basename(icon.filePath) });
+    archive.finalize();
+});
+
 app.listen(PORT, () => {
-    console.log(`🚀 IconVault Server v2.0 draait op http://localhost:${PORT}`);
-    console.log(`📂 Opslag: ${UPLOAD_ROOT_DIR}`);
-    console.log(`💾 Database: ${DB_FILE}`);
+    console.log(`Server draait op http://localhost:${PORT}`);
 });
