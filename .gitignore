@@ -1,0 +1,17 @@
+# Dependencies
+
+/node_modules
+/uploads
+
+# Log files
+
+npm-debug.log\*
+yarn-debug.log\*
+yarn-error.log\*
+.npm
+.eslintcache
+.DS_Store
+
+# Environment files
+
+.env
