@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="nl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Externe Icoon Tester (Dark)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Forceer donkere achtergrond voor de hele pagina */
+        body { background-color: #020617; color: #cbd5e1; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <!-- Card Container: Dark Slate 900 -->
+    <div class="bg-slate-900 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-800">
+        <div class="mb-6 border-b border-slate-800 pb-4">
+            <h1 class="text-2xl font-bold text-white">Externe App Simulatie</h1>
+            <p class="text-sm text-slate-400">Test hier of je iconen van afstand bereikbaar zijn.</p>
+        </div>
+
+        <!-- Configuratie -->
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Server Adres</label>
+                <!-- Input: Darker background, lighter text -->
+                <input type="text" id="serverUrl" value="http://localhost:3000" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-600" placeholder="Bijv. http://localhost:3000">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Icoon Naam (Zonder extensie)</label>
+                <div class="flex gap-2">
+                    <input type="text" id="iconName" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-600" placeholder="Bijv. dashboard_home">
+                    <button onclick="fetchIcon()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-indigo-500/20">
+                        Haal Op
+                    </button>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-1">De server zoekt automatisch in alle mappen.</p>
+            </div>
+        </div>
+
+        <!-- Resultaat Gebied -->
+        <div class="mt-8">
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Resultaat</label>
+            
+            <!-- Result Box: Darker background -->
+            <div id="resultBox" class="relative w-full h-48 bg-slate-950 border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center overflow-hidden transition-colors duration-300">
+                <!-- Placeholder tekst -->
+                <p id="placeholderText" class="text-slate-600 text-sm">Nog geen icoon opgevraagd</p>
+                
+                <!-- Het Icoon -->
+                <img id="targetIcon" class="hidden w-24 h-24 object-contain drop-shadow-lg transition-transform hover:scale-110" />
+                
+                <!-- Foutmelding -->
+                <div id="errorMsg" class="hidden text-center p-4">
+                    <span class="text-3xl mb-2 block">❌</span>
+                    <p class="text-red-400 font-bold text-sm">Niet gevonden</p>
+                    <p class="text-xs text-red-500/70 mt-1">Check de naam of server URL</p>
+                </div>
+            </div>
+
+            <!-- Technische URL weergave -->
+            <div id="urlDisplay" class="mt-4 p-3 bg-slate-950 rounded-lg border border-slate-800 hidden">
+                <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Gebruikte URL:</p>
+                <code class="text-xs text-green-400 font-mono break-all" id="debugUrl">...</code>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function fetchIcon() {
+            const server = document.getElementById('serverUrl').value.replace(/\/$/, '');
+            const name = document.getElementById('iconName').value.trim();
+            const img = document.getElementById('targetIcon');
+            const placeholder = document.getElementById('placeholderText');
+            const errorMsg = document.getElementById('errorMsg');
+            const resultBox = document.getElementById('resultBox');
+            const urlDisplay = document.getElementById('urlDisplay');
+            const debugUrl = document.getElementById('debugUrl');
+
+            if (!name) {
+                alert("Vul aub een icoon naam in.");
+                return;
+            }
+
+            // Reset UI
+            img.classList.add('hidden');
+            errorMsg.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+            placeholder.innerText = "Laden...";
+            
+            // Reset borders naar neutraal
+            resultBox.className = "relative w-full h-48 bg-slate-950 border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center overflow-hidden transition-colors duration-300";
+            
+            const fullUrl = `${server}/api/serve-icon/${name}`;
+            
+            urlDisplay.classList.remove('hidden');
+            debugUrl.innerText = fullUrl;
+
+            img.onload = function() {
+                placeholder.classList.add('hidden');
+                img.classList.remove('hidden');
+                // Success state: Dark Green glow
+                resultBox.classList.remove('border-slate-700', 'bg-slate-950');
+                resultBox.classList.add('border-green-500/50', 'bg-green-900/10');
+            };
+
+            img.onerror = function() {
+                placeholder.classList.add('hidden');
+                errorMsg.classList.remove('hidden');
+                // Error state: Dark Red glow
+                resultBox.classList.remove('border-slate-700', 'bg-slate-950');
+                resultBox.classList.add('border-red-500/50', 'bg-red-900/10');
+            };
+
+            img.src = fullUrl + "?t=" + new Date().getTime();
+        }
+
+        document.getElementById('iconName').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') fetchIcon();
+        });
+    </script>
+</body>
+</html>
