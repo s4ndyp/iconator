@@ -88,18 +88,25 @@
 <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
 
-    // --- Utility: Image Resizer ---
+    // TODO: VERVANG DIT DOOR HET ECHTE BACKEND ENDPOINT VOOR UPLOADS
+    const BACKEND_API_URL = '/api/upload-icon'; 
+
+    // --- Utility: Image Resizer (geeft nu een Blob terug voor upload) ---
     const processImage = (file, size) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
+                    const fileName = file.name.split('.')[0].replace(/[-_]/g, '_') + '.png';
+
                     if (size === 'original') {
-                        resolve(e.target.result);
+                        // Geen conversie nodig, direct blob van originele file
+                        resolve({ blob: file, fileName });
                         return;
                     }
 
+                    // Conversie en resizen
                     const canvas = document.createElement('canvas');
                     canvas.width = parseInt(size);
                     canvas.height = parseInt(size);
@@ -112,13 +119,56 @@
                     const y = (canvas.height - h) / 2;
 
                     ctx.drawImage(img, x, y, w, h);
-                    resolve(canvas.toDataURL('image/png'));
+
+                    // Converteer canvas naar Blob (PNG)
+                    canvas.toBlob((blob) => {
+                        resolve({ blob, fileName });
+                    }, 'image/png');
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         });
     };
+
+    // --- Utility: Backend Communicatie ---
+    const uploadIconToServer = async (fileObject, metadata) => {
+        console.log('Start upload naar backend:', metadata.fileName);
+        
+        const formData = new FormData();
+        formData.append('iconFile', fileObject.blob, fileObject.fileName);
+        formData.append('collectionId', metadata.collectionId);
+        formData.append('collectionName', metadata.collectionName);
+        formData.append('folderId', metadata.folderId);
+        formData.append('folderName', metadata.folderName);
+        formData.append('iconName', metadata.iconName);
+        formData.append('iconTags', metadata.iconTags.join(','));
+
+        // Mock fetch voor demonstratie in Canvas, vervang dit op de webserver!
+        try {
+            // Op je echte server, vervang dit met een echte fetch:
+            /*
+            const response = await fetch(BACKEND_API_URL, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) throw new Error('Upload mislukt op de server.');
+            const data = await response.json();
+            // De backend moet de uiteindelijke URL van het opgeslagen icoon teruggeven
+            return { url: data.iconUrl || `/icons/${metadata.folderName}/${metadata.collectionName}/${fileObject.fileName}` };
+            */
+
+            // --- Mock Success Response in Canvas (voor demo) ---
+            await new Promise(r => setTimeout(r, 1000)); // Simulatie van netwerklatentie
+            const mockUrl = `https://placehold.co/100x100/374151/FFFFFF/png?text=${metadata.iconName.substring(0, 3).toUpperCase()}`;
+            return { url: mockUrl };
+
+        } catch (error) {
+            console.error('Fout bij upload:', error);
+            throw new Error(`Upload mislukt: ${error.message}`);
+        }
+    };
+
 
     // --- Icon Helper ---
     const Icon = ({ name, size = 24, className, ...props }) => {
@@ -154,6 +204,7 @@
     const FolderInput = (p) => <Icon name="folder-input" {...p} />;
     const FileStack = (p) => <Icon name="file-stack" {...p} />;
     const Check = (p) => <Icon name="check" {...p} />;
+    const Loader = (p) => <Icon name="loader" {...p} />;
 
 
     // --- Mock Data ---
@@ -247,13 +298,14 @@
         );
     };
 
-    const UploadModal = ({ isOpen, onClose, onUpload, activeCollectionName }) => {
+    const UploadModal = ({ isOpen, onClose, onUpload, activeCollection, activeFolder }) => {
         const [mode, setMode] = useState('single'); // 'single' or 'bulk'
         const [dragActive, setDragActive] = useState(false);
+        const [isLoading, setIsLoading] = useState(false);
         
         // Single Upload State
         const [preview, setPreview] = useState(null);
-        const [fileObj, setFileObj] = useState(null); // Keep original file for resizing
+        const [fileObj, setFileObj] = useState(null); 
         const [formData, setFormData] = useState({ name: '', tags: '', size: 'original' });
         
         // Bulk Upload State
@@ -270,10 +322,13 @@
                 setFileObj(null);
                 setBulkFiles([]);
                 setFormData({ name: '', tags: '', size: 'original' });
+                setIsLoading(false);
             }
         }, [isOpen]);
 
         if (!isOpen) return null;
+
+        const activeCollectionName = activeCollection?.name || 'Onbekend';
 
         // --- Single Upload Logic ---
         const handleSingleFile = (file) => {
@@ -290,14 +345,35 @@
         };
 
         const handleSingleSubmit = async () => {
-            if (!fileObj || !formData.name) return;
-            
-            // Process/Resize Image
-            const processedUrl = await processImage(fileObj, formData.size);
-            
-            const tagArray = formData.tags.split(',').map(t => t.trim()).filter(t => t);
-            onUpload([{ name: formData.name, url: processedUrl, tags: tagArray }]);
-            onClose();
+            if (!fileObj || !formData.name || !activeCollection || !activeFolder) return;
+            setIsLoading(true);
+
+            try {
+                const fileForUpload = await processImage(fileObj, formData.size);
+                const tags = formData.tags.split(',').map(t => t.trim()).filter(t => t);
+
+                const metadata = {
+                    collectionId: activeCollection.id,
+                    collectionName: activeCollection.name,
+                    folderId: activeFolder.id,
+                    folderName: activeFolder.name,
+                    iconName: formData.name,
+                    iconTags: tags,
+                    size: formData.size
+                };
+
+                const result = await uploadIconToServer(fileForUpload, metadata);
+
+                onUpload([{ name: metadata.iconName, url: result.url, tags: tags }]);
+                onClose();
+
+            } catch (error) {
+                console.error(error);
+                // In een echte app: toon foutmelding aan gebruiker
+                alert('Fout bij upload: zie console voor details.'); 
+            } finally {
+                setIsLoading(false);
+            }
         };
 
         // --- Bulk Upload Logic ---
@@ -307,17 +383,38 @@
         };
 
         const handleBulkSubmit = async () => {
-            if (bulkFiles.length === 0) return;
-            
-            // Process all files (default to original size for bulk to be fast, or could add option)
-            const processedIcons = await Promise.all(bulkFiles.map(async (file) => {
-                const url = await processImage(file, 'original');
-                const name = file.name.split('.')[0].replace(/[-_]/g, ' ');
-                return { name, url, tags: ['bulk-import'] };
-            }));
+            if (bulkFiles.length === 0 || !activeCollection || !activeFolder) return;
+            setIsLoading(true);
 
-            onUpload(processedIcons);
-            onClose();
+            try {
+                const results = await Promise.all(bulkFiles.map(async (file) => {
+                    const fileForUpload = await processImage(file, 'original');
+                    const iconName = file.name.split('.')[0].replace(/[-_]/g, ' ');
+                    const tags = ['bulk-import'];
+
+                    const metadata = {
+                        collectionId: activeCollection.id,
+                        collectionName: activeCollection.name,
+                        folderId: activeFolder.id,
+                        folderName: activeFolder.name,
+                        iconName: iconName,
+                        iconTags: tags,
+                        size: 'original'
+                    };
+
+                    const result = await uploadIconToServer(fileForUpload, metadata);
+                    return { name: iconName, url: result.url, tags: tags };
+                }));
+
+                onUpload(results);
+                onClose();
+
+            } catch (error) {
+                console.error(error);
+                alert('Fout bij bulk upload: zie console voor details.');
+            } finally {
+                setIsLoading(false);
+            }
         };
 
         // --- Drag & Drop ---
@@ -334,6 +431,14 @@
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="bg-dark_paper w-full max-w-xl rounded-2xl border border-slate-600 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                     
+                    {/* Loading Overlay */}
+                    {isLoading && (
+                        <div className="absolute inset-0 z-50 bg-slate-900/90 flex items-center justify-center flex-col text-white backdrop-blur-sm">
+                            <Loader size={48} className="animate-spin text-primary" />
+                            <p className="mt-3 text-sm font-medium">Bezig met uploaden...</p>
+                        </div>
+                    )}
+
                     {/* Header */}
                     <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
                         <div>
@@ -498,20 +603,20 @@
 
                     {/* Footer */}
                     <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex justify-end gap-3">
-                        <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Annuleren</button>
+                        <button onClick={onClose} disabled={isLoading} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Annuleren</button>
                         {mode === 'single' ? (
                             <button 
                                 onClick={handleSingleSubmit} 
-                                disabled={!preview || !formData.name} 
-                                className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(!preview || !formData.name) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
+                                disabled={isLoading || !preview || !formData.name} 
+                                className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(isLoading || !preview || !formData.name) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
                             >
                                 <Plus size={16} /> Opslaan
                             </button>
                         ) : (
                             <button 
                                 onClick={handleBulkSubmit} 
-                                disabled={bulkFiles.length === 0} 
-                                className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(bulkFiles.length === 0) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
+                                disabled={isLoading || bulkFiles.length === 0} 
+                                className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-lg flex items-center gap-2 ${(isLoading || bulkFiles.length === 0) ? 'bg-slate-700 opacity-50' : 'bg-primary'}`}
                             >
                                 <UploadCloud size={16} /> Importeer Alles
                             </button>
@@ -563,7 +668,6 @@
         );
     };
 
-    // Aangepaste IconCard: Minimalistisch, compact, acties op hover
     const IconCard = ({ icon, onDelete }) => {
         const handleDownload = (e) => {
             e.stopPropagation();
@@ -580,7 +684,7 @@
                 {/* Background Pattern Subtle */}
                 <div className="absolute inset-0 opacity-10 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYlWNgYGD4z8DAwMgwyoAOSMQAoQowAABWJgQD63K4OQAAAABJRU5ErkJggg==')]"></div>
                 
-                {/* Main Icon Image: PADDING VERMINDERD VAN p-6 NAAR p-4 VOOR COMPACTERE WEERGAVE */}
+                {/* Main Icon Image */}
                 <div className="absolute inset-0 flex items-center justify-center p-4">
                     <img 
                         src={icon.url} 
@@ -624,8 +728,8 @@
         const [collections, setCollections] = useState(INITIAL_COLLECTIONS);
         const [icons, setIcons] = useState(INITIAL_ICONS);
         
-        const [activeFolderId, setActiveFolderId] = useState(null); 
-        const [activeCollectionId, setActiveCollectionId] = useState(null); 
+        const [activeFolderId, setActiveFolderId] = useState('f1'); // Start in een map voor demo
+        const [activeCollectionId, setActiveCollectionId] = useState('c1'); // Start in een collectie
         const [searchQuery, setSearchQuery] = useState('');
         const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -663,7 +767,6 @@
             return icons.filter(i => i.collectionId === activeCollectionId);
         }, [icons, activeCollectionId]);
 
-        // Nieuwe handler die een array van iconen accepteert
         const handleUpload = (newIconsArray) => {
             if (!activeCollectionId) return;
             
@@ -677,7 +780,7 @@
         };
 
         const handleDeleteIcon = (id) => {
-            if(confirm('Verwijderen?')) setIcons(prev => prev.filter(i => i.id !== id));
+            if(confirm('Weet je zeker dat je dit icoon wilt verwijderen?')) setIcons(prev => prev.filter(i => i.id !== id));
         };
 
         return (
@@ -745,7 +848,6 @@
                                             <p>Geen resultaten gevonden voor "{searchQuery}"</p>
                                         </div>
                                     ) : (
-                                        /* Grid aangepast voor kleinere iconen, dichtere weergave */
                                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
                                             {filteredGlobalIcons.map(icon => (
                                                 <IconCard key={icon.id} icon={icon} onDelete={handleDeleteIcon} />
@@ -767,7 +869,6 @@
                                             <button onClick={() => setIsUploadOpen(true)} className="text-primary hover:underline">Upload je eerste icoon</button>
                                         </div>
                                     ) : (
-                                        /* Grid aangepast voor kleinere iconen, dichtere weergave */
                                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
                                             {collectionIcons.map(icon => (
                                                 <IconCard key={icon.id} icon={icon} onDelete={handleDeleteIcon} />
@@ -810,7 +911,8 @@
                     isOpen={isUploadOpen} 
                     onClose={() => setIsUploadOpen(false)} 
                     onUpload={handleUpload}
-                    activeCollectionName={activeCollection?.name}
+                    activeCollection={activeCollection}
+                    activeFolder={activeFolder}
                 />
             </div>
         );
