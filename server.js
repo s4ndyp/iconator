@@ -3,9 +3,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const crypto = require('crypto');
-// Archiver niet meer nodig voor Smart Export (gebeurt nu client-side), maar kan blijven voor legacy
-const archiver = require('archiver');
 
 const app = express();
 const PORT = 3000;
@@ -41,7 +38,7 @@ function loadDB() {
 function saveDB() { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 loadDB();
 
-// --- MULTER ---
+// --- MULTER CONFIGURATIE ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const folderName = req.body.folderName ? req.body.folderName.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'unsorted';
@@ -63,19 +60,17 @@ const upload = multer({ storage: storage });
 
 app.get('/api/data', (req, res) => res.json(db));
 
-// Upload Route met STRICTE Unieke Naam Check
+// Upload Route
 app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'Geen bestand.' });
 
     const desiredName = req.body.iconName || req.file.originalname;
     
-    // CHECK: Unieke naam in hele database
-    // Case-insensitive check
+    // CHECK: Unieke naam in hele database (Case-insensitive)
     const exists = db.icons.find(i => i.name.toLowerCase() === desiredName.toLowerCase());
 
     if (exists) {
-        // CRITICAl: Upload is al gebeurd door Multer naar temp naam.
-        // We MOETEN dit bestand nu verwijderen.
+        // CRITICAL: Verwijder het door multer geüploade bestand omdat het een duplicaat is
         try {
             fs.unlinkSync(req.file.path);
         } catch (e) {
@@ -85,7 +80,7 @@ app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
         return res.status(409).json({ message: `De naam '${desiredName}' bestaat al. Kies een unieke naam.` });
     }
 
-    // Hernoem bestand naar nette naam
+    // Hernoem bestand naar veilige naam
     const dir = path.dirname(req.file.path);
     const ext = path.extname(req.file.originalname);
     const safeFilename = desiredName.replace(/[^a-z0-9]/gi, '_').toLowerCase() + ext;
@@ -110,7 +105,7 @@ app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
         filePath: newPath,
         width: parseInt(req.body.width),
         height: parseInt(req.body.height),
-        color: req.body.color,
+        // Color veld verwijderd
         size: req.file.size,
         dateAdded: new Date().toISOString()
     };
