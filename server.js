@@ -29,176 +29,121 @@ function loadDB() {
             db = JSON.parse(data);
         } catch (e) { console.error("DB Load Error", e); }
     } else {
-        // Defaults
         db.folders = [{ id: 'f1', name: "Demo Map", icon: "folder" }];
         db.collections = [{ id: 'c1', folderId: 'f1', name: "General", description: "Start collectie" }];
         saveDB();
     }
 }
-function saveDB() { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
+function saveDB() {
+    try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); } catch (e) { console.error("DB Save Error", e); }
+}
+
 loadDB();
 
-// --- MULTER ---
+// --- MULTER CONFIG ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const folderName = req.body.folderName ? req.body.folderName.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'unsorted';
-        const collectionName = req.body.collectionName ? req.body.collectionName.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'misc';
-        const targetDir = path.join(UPLOAD_ROOT_DIR, folderName, collectionName);
-        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-        cb(null, targetDir);
+        const colId = req.body.collectionId || 'default';
+        const dir = path.join(UPLOAD_ROOT_DIR, colId);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+        const ext = path.extname(file.originalname);
+        cb(null, file.fieldname + '-' + uniqueSuffix + ext);
     }
 });
-
 const upload = multer({ storage: storage });
 
-// --- ROUTES ---
+// --- API ROUTES ---
 
 // 1. GET DATA
-app.get('/api/data', (req, res) => res.json(db));
-
-// 2. UPLOAD ICON
-app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
-    if (!req.file) return res.status(400).json({ message: 'Geen bestand.' });
-
-    const desiredName = req.body.iconName || req.file.originalname;
-    
-    // Check duplicate
-    const exists = db.icons.find(i => i.name.toLowerCase() === desiredName.toLowerCase());
-    if (exists) {
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
-        return res.status(409).json({ message: `De naam '${desiredName}' bestaat al.` });
-    }
-
-    const dir = path.dirname(req.file.path);
-    const ext = path.extname(req.file.originalname);
-    const safeFilename = desiredName.replace(/[^a-z0-9]/gi, '_').toLowerCase() + ext;
-    const newPath = path.join(dir, safeFilename);
-
-    try { fs.renameSync(req.file.path, newPath); } catch(e) { return res.status(500).json({ message: 'Fout bij opslaan.' }); }
-
-    const relativePath = path.relative(UPLOAD_ROOT_DIR, newPath);
-    const iconUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-
-    const newIcon = {
-        id: Date.now().toString(),
-        collectionId: req.body.collectionId,
-        name: desiredName,
-        filename: safeFilename,
-        tags: req.body.iconTags ? req.body.iconTags.split(',') : [],
-        url: iconUrl,
-        filePath: newPath,
-        width: parseInt(req.body.width),
-        height: parseInt(req.body.height),
-        size: req.file.size,
-        dateAdded: new Date().toISOString()
-    };
-
-    db.icons.push(newIcon);
-    saveDB();
-    res.json({ success: true, icon: newIcon });
+app.get('/api/data', (req, res) => {
+    res.json(db);
 });
 
-// 3. FOLDERS
+// 2. FOLDERS
 app.post('/api/folders', (req, res) => {
-    const newFolder = { id: `f${Date.now()}`, name: req.body.name, icon: 'folder' };
+    const newFolder = { id: 'f' + Date.now(), name: req.body.name, icon: 'folder' };
     db.folders.push(newFolder);
     saveDB();
     res.json(newFolder);
 });
-
-// NIEUW: Hernoem map
 app.put('/api/folders/:id', (req, res) => {
-    const folder = db.folders.find(f => f.id === req.params.id);
-    if (folder) {
-        folder.name = req.body.name;
-        saveDB();
-        res.json(folder);
-    } else {
-        res.status(404).json({ message: 'Map niet gevonden' });
-    }
+    const f = db.folders.find(x => x.id === req.params.id);
+    if(f) { f.name = req.body.name || f.name; saveDB(); res.json(f); } 
+    else res.status(404).json({error: "Niet gevonden"});
 });
-
-// NIEUW: Verwijder map (Cascade delete: collecties + iconen)
 app.delete('/api/folders/:id', (req, res) => {
-    const folderId = req.params.id;
-    const folderIndex = db.folders.findIndex(f => f.id === folderId);
-    
-    if (folderIndex > -1) {
-        // Verwijder folder
-        db.folders.splice(folderIndex, 1);
-
-        // Vind alle collecties in deze folder
-        const collectionsToDelete = db.collections.filter(c => c.folderId === folderId);
-        const collectionIds = collectionsToDelete.map(c => c.id);
-
-        // Verwijder collecties uit DB
-        db.collections = db.collections.filter(c => c.folderId !== folderId);
-
-        // Verwijder alle iconen in deze collecties (en hun bestanden)
-        const iconsToDelete = db.icons.filter(i => collectionIds.includes(i.collectionId));
-        iconsToDelete.forEach(icon => {
-            if (fs.existsSync(icon.filePath)) {
-                try { fs.unlinkSync(icon.filePath); } catch(e) {}
-            }
-        });
-        db.icons = db.icons.filter(i => !collectionIds.includes(i.collectionId));
-
-        saveDB();
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ message: 'Map niet gevonden' });
-    }
+    const id = req.params.id;
+    // Verwijder folder, collecties en iconen cascade
+    const cols = db.collections.filter(c => c.folderId === id);
+    cols.forEach(c => {
+        const icons = db.icons.filter(i => i.collectionId === c.id);
+        icons.forEach(i => { if(fs.existsSync(i.filePath)) fs.unlinkSync(i.filePath); });
+    });
+    db.icons = db.icons.filter(i => !cols.find(c => c.id === i.collectionId));
+    db.collections = db.collections.filter(c => c.folderId !== id);
+    db.folders = db.folders.filter(f => f.id !== id);
+    saveDB();
+    res.json({success: true});
 });
 
-// 4. COLLECTIONS
+// 3. COLLECTIONS
 app.post('/api/collections', (req, res) => {
-    const newCol = { id: `c${Date.now()}`, folderId: req.body.folderId, name: req.body.name, description: req.body.description };
+    const newCol = { id: 'c' + Date.now(), folderId: req.body.folderId, name: req.body.name };
     db.collections.push(newCol);
     saveDB();
     res.json(newCol);
 });
-
-// NIEUW: Hernoem collectie
 app.put('/api/collections/:id', (req, res) => {
-    const col = db.collections.find(c => c.id === req.params.id);
-    if (col) {
-        col.name = req.body.name;
-        saveDB();
-        res.json(col);
-    } else {
-        res.status(404).json({ message: 'Collectie niet gevonden' });
-    }
+    const c = db.collections.find(x => x.id === req.params.id);
+    if(c) { c.name = req.body.name || c.name; saveDB(); res.json(c); }
+    else res.status(404).json({error: "Niet gevonden"});
 });
-
-// NIEUW: Verwijder collectie
 app.delete('/api/collections/:id', (req, res) => {
-    const colId = req.params.id;
-    const colIndex = db.collections.findIndex(c => c.id === colId);
-
-    if (colIndex > -1) {
-        db.collections.splice(colIndex, 1);
-
-        // Verwijder iconen
-        const iconsToDelete = db.icons.filter(i => i.collectionId === colId);
-        iconsToDelete.forEach(icon => {
-            if (fs.existsSync(icon.filePath)) {
-                try { fs.unlinkSync(icon.filePath); } catch(e) {}
-            }
-        });
-        db.icons = db.icons.filter(i => i.collectionId !== colId);
-
-        saveDB();
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ message: 'Collectie niet gevonden' });
-    }
+    const id = req.params.id;
+    const icons = db.icons.filter(i => i.collectionId === id);
+    icons.forEach(i => { if(fs.existsSync(i.filePath)) fs.unlinkSync(i.filePath); });
+    db.icons = db.icons.filter(i => i.collectionId !== id);
+    db.collections = db.collections.filter(c => c.id !== id);
+    saveDB();
+    res.json({success: true});
 });
 
-// 5. ICONS
+// 4. UPLOAD
+app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
+    if (!req.file) return res.status(400).json({ message: 'Geen bestand' });
+
+    const collectionId = req.body.collectionId;
+    const folderId = req.body.folderId;
+    const width = parseInt(req.body.width) || 0;
+    const height = parseInt(req.body.height) || 0;
+    const tags = req.body.iconTags ? req.body.iconTags.split(',') : [];
+
+    const newIcon = {
+        id: 'i' + Date.now() + Math.random().toString(36).substr(2, 5),
+        collectionId: collectionId,
+        folderId: folderId, // Denormalisatie voor sneller filteren
+        name: req.body.iconName || req.file.originalname,
+        originalName: req.file.originalname,
+        fileName: req.file.filename,
+        filePath: req.file.path,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+        width: width,
+        height: height,
+        tags: tags,
+        dateAdded: new Date().toISOString(),
+        url: `/uploads/${collectionId}/${req.file.filename}` 
+    };
+
+    db.icons.push(newIcon);
+    saveDB();
+    res.json(newIcon);
+});
+
 app.delete('/api/icons/:id', (req, res) => {
     const idx = db.icons.findIndex(i => i.id === req.params.id);
     if (idx > -1) {
@@ -214,17 +159,66 @@ app.delete('/api/icons/:id', (req, res) => {
     }
 });
 
-app.get('/api/serve-icon/:name', (req, res) => {
-    const searchName = req.params.name.toLowerCase();
-    const icon = db.icons.find(i => i.name.toLowerCase().replace(/[^a-z0-9]/gi, '_') === searchName);
+// --- NIEUWE SLIMME SERVE FUNCTIE ---
+app.get('/api/serve-icon/:query', (req, res) => {
+    const query = req.params.query.toLowerCase();
     
-    if (icon && fs.existsSync(icon.filePath)) {
-        res.sendFile(icon.filePath);
+    // 1. Probeer extensie te detecteren (bijv. "huis.svg")
+    const parts = query.split('.');
+    let requestedExt = null;
+    let searchName = query;
+    
+    if (parts.length > 1) {
+        requestedExt = '.' + parts.pop(); // haal laatste deel weg (.svg)
+        searchName = parts.join('.'); // de rest is de naam
+    }
+
+    // 2. Score alle iconen
+    const candidates = db.icons.map(icon => {
+        let score = 0;
+        const dbName = icon.name.toLowerCase();
+        const dbExt = path.extname(icon.originalName).toLowerCase();
+
+        // SCORING LOGICA
+        if (dbName === searchName) score += 100;           // Exacte naam match
+        else if (dbName === query) score += 100;           // Exacte match inclusief extensie input
+        else if (dbName.startsWith(searchName)) score += 50; // Begint met...
+        else if (dbName.includes(searchName)) score += 20;   // Bevat...
+
+        if (requestedExt && dbExt === requestedExt) score += 50; // Gebruiker vroeg specifiek formaat (bijv .svg)
+        
+        // Bonus voor vectoren als er geen specifieke extensie gevraagd is
+        if (!requestedExt && dbExt === '.svg') score += 10; 
+
+        return { icon, score };
+    });
+
+    // 3. Filter alleen relevante resultaten en sorteer op score
+    // We willen alleen resultaten die enige relevantie hebben (score > 0)
+    const bestMatches = candidates
+        .filter(c => c.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+    // 4. Serveer de winnaar
+    if (bestMatches.length > 0) {
+        const winner = bestMatches[0].icon;
+        
+        // Optioneel: Logica als er twijfel is (bijv. logging)
+        // console.log(`Served ${winner.name} (Score: ${bestMatches[0].score}) for query "${query}"`);
+
+        if (fs.existsSync(winner.filePath)) {
+            res.sendFile(path.resolve(winner.filePath));
+        } else {
+            res.status(404).send('Bestand fysiek niet gevonden');
+        }
     } else {
-        res.status(404).send('Icoon niet gevonden.');
+        // Fallback: Misschien een standaard placeholder?
+        res.status(404).send('Geen icoon gevonden dat matcht met: ' + query);
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`Server draait op http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`- API: http://localhost:${PORT}/api/data`);
+    console.log(`- Smart Serve: http://localhost:${PORT}/api/serve-icon/:name`);
 });
