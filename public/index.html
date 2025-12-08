@@ -125,60 +125,14 @@
     };
     const useToast = () => useContext(ToastContext);
 
-    // --- UTILS: Color & Image ---
-    
-    // NIEUW: Helper voor kleur categorieën
-    const getColorBucket = (hex) => {
-        if (!hex) return 'Overig';
-        const r = parseInt(hex.substr(1, 2), 16);
-        const g = parseInt(hex.substr(3, 2), 16);
-        const b = parseInt(hex.substr(5, 2), 16);
-        
-        let max = Math.max(r, g, b), min = Math.min(r, g, b);
-        let h, s, l = (max + min) / 2;
-
-        if (max === min) { h = s = 0; } 
-        else {
-            let d = max - min;
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            switch (max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: h = (b - r) / d + 2; break;
-                case b: h = (r - g) / d + 4; break;
-            }
-            h /= 6;
-        }
-        
-        if (l < 40) return s < 0.1 ? 'Zwart/Grijs' : 'Donker';
-        if (l > 220) return 'Wit/Licht';
-        if (s < 0.1) return 'Grijs';
-        
-        const deg = h * 360;
-        if (deg < 15 || deg > 345) return 'Rood';
-        if (deg < 45) return 'Oranje';
-        if (deg < 75) return 'Geel';
-        if (deg < 165) return 'Groen';
-        if (deg < 195) return 'Cyaan';
-        if (deg < 255) return 'Blauw';
-        if (deg < 295) return 'Paars';
-        return 'Roze';
-    };
-
-    const getDominantColor = (imgEl) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1; canvas.height = 1;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(imgEl, 0, 0, 1, 1);
-        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-        return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-    };
+    // --- UTILS: Image Processing ---
 
     const processImage = (file, size = 'original') => {
         return new Promise((resolve) => {
             if (file.type === 'image/svg+xml') {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    resolve({ blob: file, fileName: file.name, width: 0, height: 0, color: '#000000', isSvg: true });
+                    resolve({ blob: file, fileName: file.name, width: 0, height: 0, isSvg: true });
                 };
                 reader.readAsText(file);
                 return;
@@ -188,8 +142,6 @@
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
-                    const color = getDominantColor(img); 
-                    
                     let finalBlob = file;
                     let width = img.width;
                     let height = img.height;
@@ -209,12 +161,12 @@
                         ctx.drawImage(img, x, y, w, h);
                         
                         canvas.toBlob((blob) => {
-                             resolve({ blob, fileName: file.name, width: canvas.width, height: canvas.height, color, isSvg: false });
+                             resolve({ blob, fileName: file.name, width: canvas.width, height: canvas.height, isSvg: false });
                         }, 'image/png');
                         return;
                     }
 
-                    resolve({ blob: file, fileName: file.name, width, height, color, isSvg: false });
+                    resolve({ blob: file, fileName: file.name, width, height, isSvg: false });
                 };
                 img.src = e.target.result;
             };
@@ -288,8 +240,8 @@
 
     // --- COMPONENTS ---
 
-    // 1. Sidebar Component (Met Kleuren & Tools)
-    const Sidebar = ({ folders, activeFolderId, onSelectFolder, onSelectAll, onAddFolder, allIcons, activeTag, onSelectTag, activeColor, onSelectColor, onOpenGenerator }) => {
+    // 1. Sidebar Component (Met Tools & Tags)
+    const Sidebar = ({ folders, activeFolderId, onSelectFolder, onSelectAll, onAddFolder, allIcons, activeTag, onSelectTag, onOpenGenerator }) => {
         const handleCreateFolder = () => {
             const name = prompt("Naam van nieuwe map:");
             if (name) onAddFolder(name);
@@ -299,20 +251,12 @@
             const tags = new Set();
             allIcons.forEach(icon => { if (icon.tags) icon.tags.forEach(t => tags.add(t)); });
             return Array.from(tags).sort((a, b) => {
+                // Sorteer tags: nummers eerst, dan tekst
                 const numA = parseInt(a);
                 const numB = parseInt(b);
                 if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
                 return a.localeCompare(b);
             });
-        }, [allIcons]);
-
-        const colorBuckets = useMemo(() => {
-            const buckets = {};
-            allIcons.forEach(icon => {
-                const bucket = getColorBucket(icon.color);
-                buckets[bucket] = (buckets[bucket] || 0) + 1;
-            });
-            return buckets;
         }, [allIcons]);
 
         return (
@@ -331,7 +275,7 @@
                 {/* Navigation */}
                 <div className="p-4 flex-1">
                     
-                    {/* NIEUW: Tools Section */}
+                    {/* Tools Section */}
                     <div className="mb-6">
                          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2">Tools</div>
                          <button 
@@ -355,7 +299,7 @@
                         <button 
                             onClick={onSelectAll}
                             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                                activeFolderId === null && activeTag === null && activeColor === null
+                                activeFolderId === null && activeTag === null
                                 ? 'bg-primary/10 text-primary border border-primary/20' 
                                 : 'text-slate-400 hover:bg-slate-800 hover:text-white border border-transparent'
                             }`}
@@ -403,48 +347,9 @@
                             </div>
                         </div>
                     )}
-
-                    {/* NIEUW: Kleuren Filter */}
-                    {Object.keys(colorBuckets).length > 0 && (
-                         <div className="mt-8">
-                            <div className="flex items-center gap-2 mb-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                <Icon name="palette" size={12} /> Kleuren
-                            </div>
-                            <div className="flex flex-wrap gap-2 px-2">
-                                {Object.entries(colorBuckets).map(([color, count]) => (
-                                    <button
-                                        key={color}
-                                        onClick={() => onSelectColor(color)}
-                                        className={`flex items-center gap-2 text-[10px] px-2.5 py-1.5 rounded-md border w-full transition-all ${
-                                            activeColor === color
-                                            ? 'bg-slate-700 text-white border-primary'
-                                            : 'bg-dark text-slate-400 border-slate-800 hover:bg-slate-800'
-                                        }`}
-                                    >
-                                        <div className={`w-2 h-2 rounded-full border border-white/10 ${
-                                            color === 'Rood' ? 'bg-red-500' :
-                                            color === 'Blauw' ? 'bg-blue-500' :
-                                            color === 'Groen' ? 'bg-green-500' :
-                                            color === 'Geel' ? 'bg-yellow-500' :
-                                            color === 'Oranje' ? 'bg-orange-500' :
-                                            color === 'Paars' ? 'bg-purple-500' :
-                                            color === 'Roze' ? 'bg-pink-500' :
-                                            color === 'Wit/Licht' ? 'bg-white' :
-                                            'bg-slate-500'
-                                        }`}></div>
-                                        <span className="flex-1 text-left">{color}</span>
-                                        <span className="opacity-50">{count}</span>
-                                    </button>
-                                ))}
-                                {activeColor && (
-                                    <button onClick={() => onSelectColor(null)} className="text-[10px] text-red-400 w-full text-center mt-1 hover:underline">Reset Kleur</button>
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
-                {/* Footer Info (Origineel behouden) */}
+                {/* Footer Info */}
                 <div className="p-4 border-t border-slate-700/50">
                     <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700/50">
                         <div className="flex items-center gap-3">
@@ -452,7 +357,7 @@
                                 <span className="text-xs font-bold text-white">IV</span>
                             </div>
                             <div className="flex-1">
-                                <div className="text-xs font-medium text-white">Versie 2.1</div>
+                                <div className="text-xs font-medium text-white">Versie 2.2</div>
                                 <div className="text-[10px] text-green-400 flex items-center gap-1">
                                     <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div> Online
                                 </div>
@@ -464,7 +369,7 @@
         );
     };
 
-    // 2. Collection Card (Met Drag & Drop support - Origineel)
+    // 2. Collection Card
     const CollectionCard = ({ collection, icons, onClick, onDropFile }) => {
         const previewIcons = icons.slice(0, 4);
         const [isDragOver, setIsDragOver] = useState(false);
@@ -532,23 +437,8 @@
         );
     };
 
-    // 3. Icon Card (Aangepast met Nieuwe Knoppen)
+    // 3. Icon Card (Aangepast: Geen kleuren, geen smart download)
     const IconCard = ({ icon, onDelete, viewMode, onCopy }) => {
-        const [generating, setGenerating] = useState(false);
-
-        const handleSmartExport = async (e) => {
-            e.stopPropagation();
-            setGenerating(true);
-            try {
-                // Feature: Smart Export (Client-side ZIP)
-                await generateAndDownloadZip(icon.url, icon.name, true);
-            } catch (err) {
-                console.error(err);
-                alert("Fout bij genereren ZIP");
-            } finally {
-                setGenerating(false);
-            }
-        };
         
         if (viewMode === 'list') {
             return (
@@ -570,10 +460,6 @@
                     {/* List Actions */}
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                          <button onClick={() => onCopy(icon.url)} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Kopieer HTML"><Icon name="code" size={16} /></button>
-                         {/* Smart Export */}
-                         <button onClick={handleSmartExport} className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Smart ZIP Export">
-                             {generating ? <Icon name="loader" className="animate-spin" size={16} /> : <Icon name="package" size={16} />}
-                         </button>
                          {/* Direct Download */}
                          <a href={icon.url} download className="p-2 hover:bg-slate-700 rounded text-slate-400 hover:text-white" title="Download Bestand"><Icon name="download" size={16} /></a>
                          <button onClick={() => onDelete(icon.id)} className="p-2 hover:bg-slate-700 rounded text-red-400 hover:text-red-300" title="Verwijderen"><Icon name="trash-2" size={16} /></button>
@@ -604,10 +490,6 @@
                         <button onClick={() => onCopy(icon.url)} className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-full shadow-lg" title="Kopieer Code">
                             <Icon name="code" size={16} />
                         </button>
-                        {/* Smart Export ZIP */}
-                        <button onClick={handleSmartExport} className="p-2 bg-accent hover:bg-accent/80 text-white rounded-full shadow-lg" title="Pakket (ZIP)">
-                             {generating ? <Icon name="loader" className="animate-spin" size={16} /> : <Icon name="package" size={16} />}
-                        </button>
                         {/* Direct Download */}
                         <a href={icon.url} download className="p-2 bg-primary hover:bg-primary_hover text-white rounded-full shadow-lg" title="Direct Download">
                             <Icon name="download" size={16} />
@@ -617,15 +499,11 @@
                         </button>
                     </div>
                 </div>
-                
-                {icon.color && (
-                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full shadow-sm border border-white/10" style={{backgroundColor: icon.color}}></div>
-                )}
             </div>
         );
     };
 
-    // 4. NIEUW: GENERATOR VIEW (Niet in DB)
+    // 4. GENERATOR VIEW (Niet in DB)
     const GeneratorView = () => {
         const [activeFile, setActiveFile] = useState(null);
         const [isProcessing, setIsProcessing] = useState(false);
@@ -706,7 +584,7 @@
         );
     };
 
-    // 5. Upload Modal (De Volledige versie van origineel)
+    // 5. Upload Modal (Auto Tags Toegevoegd)
     const UploadModal = ({ isOpen, onClose, onUpload, activeCollection, activeFolder, initialFiles }) => {
         const [mode, setMode] = useState('single');
         const [dragActive, setDragActive] = useState(false);
@@ -757,17 +635,29 @@
                     const processed = await processImage(rawFile, singleFormData.size);
                     const autoTag = processed.isSvg ? 'SVG' : Math.max(processed.width, processed.height).toString();
                     
+                    // NIEUW: Extraheer extensie
+                    const extension = processed.fileName.split('.').pop().toUpperCase();
+                    const tags = [autoTag];
+                    if (extension && extension !== 'SVG') tags.push(extension); // Voorkom dubbele 'SVG'
+                    
                     finalFiles.push({
                         ...processed,
                         finalName: singleFormData.name,
-                        tags: [autoTag]
+                        tags: tags
                     });
                 } else {
-                    finalFiles = filesToUpload.map(f => ({
-                        ...f,
-                        finalName: f.fileName.split('.')[0].replace(/[-_]/g, ' '),
-                        tags: [f.isSvg ? 'SVG' : Math.max(f.width, f.height).toString()]
-                    }));
+                    finalFiles = filesToUpload.map(f => {
+                         const autoTag = f.isSvg ? 'SVG' : Math.max(f.width, f.height).toString();
+                         const extension = f.fileName.split('.').pop().toUpperCase();
+                         const tags = [autoTag];
+                         if (extension && extension !== 'SVG') tags.push(extension);
+
+                         return {
+                            ...f,
+                            finalName: f.fileName.split('.')[0].replace(/[-_]/g, ' '),
+                            tags: tags
+                         };
+                    });
                 }
 
                 await onUpload(finalFiles, activeCollection, activeFolder);
@@ -859,7 +749,6 @@
                                         </div>
                                         <span className="truncate flex-1 text-sm text-slate-300">{f.fileName}</span>
                                         <div className="flex gap-2 items-center">
-                                            {f.color && <div className="w-3 h-3 rounded-full border border-white/20" style={{backgroundColor: f.color}}></div>}
                                             <span className="text-xs text-slate-500">{f.isSvg ? 'Vector' : `${f.width}x${f.height}`}</span>
                                         </div>
                                     </div>
@@ -910,7 +799,6 @@
         // Filter & View State
         const [searchQuery, setSearchQuery] = useState('');
         const [activeTag, setActiveTag] = useState(null);
-        const [activeColor, setActiveColor] = useState(null); // Nieuwe state
         const [viewMode, setViewMode] = useState('grid');
         const [sortBy, setSortBy] = useState('date');
 
@@ -934,10 +822,9 @@
         const currentViewCollection = data.collections.find(c => c.id === activeCollectionId);
         const effectiveUploadCollection = targetCollection || currentViewCollection;
 
-        const resetNavigation = () => { setActiveFolderId(null); setActiveCollectionId(null); setActiveTag(null); setActiveColor(null); setSearchQuery(''); setShowGenerator(false); };
-        const selectFolder = (fid) => { setActiveFolderId(fid); setActiveCollectionId(null); setActiveTag(null); setActiveColor(null); setSearchQuery(''); setShowGenerator(false); };
-        const selectTag = (tag) => { setActiveTag(tag); setActiveFolderId(null); setActiveCollectionId(null); setActiveColor(null); setSearchQuery(''); setShowGenerator(false); };
-        const selectColor = (color) => { setActiveColor(color); setActiveFolderId(null); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(false); };
+        const resetNavigation = () => { setActiveFolderId(null); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(false); };
+        const selectFolder = (fid) => { setActiveFolderId(fid); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(false); };
+        const selectTag = (tag) => { setActiveTag(tag); setActiveFolderId(null); setActiveCollectionId(null); setSearchQuery(''); setShowGenerator(false); };
         const openGenerator = () => { resetNavigation(); setShowGenerator(true); };
 
         const handleAddFolder = async (name) => {
@@ -1005,7 +892,6 @@
                 
                 formData.append('width', fileData.width);
                 formData.append('height', fileData.height);
-                formData.append('color', fileData.color);
                 
                 formData.append('iconTags', fileData.tags.join(','));
 
@@ -1042,14 +928,12 @@
                 icons = icons.filter(i => colIds.includes(i.collectionId));
             }
 
-            // 2. Search / Tag / Color
+            // 2. Search / Tag
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
                 icons = icons.filter(i => i.name.toLowerCase().includes(q));
             } else if (activeTag) {
                 icons = icons.filter(i => i.tags && i.tags.includes(activeTag));
-            } else if (activeColor) {
-                icons = icons.filter(i => getColorBucket(i.color) === activeColor);
             }
 
             // 3. Sort
@@ -1058,7 +942,7 @@
                 if (sortBy === 'size') return b.size - a.size;
                 return new Date(b.dateAdded || 0) - new Date(a.dateAdded || 0);
             });
-        }, [data.icons, activeCollectionId, activeFolderId, searchQuery, activeTag, activeColor, sortBy]);
+        }, [data.icons, activeCollectionId, activeFolderId, searchQuery, activeTag, sortBy]);
 
         const displayedCollections = useMemo(() => {
             if (activeFolderId) return data.collections.filter(c => c.folderId === activeFolderId);
@@ -1077,8 +961,6 @@
                     allIcons={data.icons}
                     activeTag={activeTag}
                     onSelectTag={selectTag}
-                    activeColor={activeColor}
-                    onSelectColor={selectColor}
                     onOpenGenerator={openGenerator}
                 />
 
@@ -1165,8 +1047,8 @@
                                 <GeneratorView />
                             ) : (
                                 <>
-                                    {/* Scenario 1: Zoeken of Tag/Kleur Filter */}
-                                    {(searchQuery || activeTag || activeColor) && (
+                                    {/* Scenario 1: Zoeken of Tag Filter */}
+                                    {(searchQuery || activeTag) && (
                                         <div>
                                             <div className="flex justify-between items-end mb-4 border-b border-slate-800 pb-2">
                                                 <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Resultaten</h3>
@@ -1186,7 +1068,7 @@
                                     )}
 
                                     {/* Scenario 2: Binnen een Collectie */}
-                                    {!searchQuery && !activeTag && !activeColor && currentViewCollection && (
+                                    {!searchQuery && !activeTag && currentViewCollection && (
                                         <div className="h-full flex flex-col">
                                             <div className="flex items-center gap-2 mb-4">
                                                 <button onClick={() => setActiveCollectionId(null)} className="flex items-center gap-1 text-sm text-slate-400 hover:text-white transition-colors">
@@ -1212,7 +1094,7 @@
                                     )}
 
                                     {/* Scenario 3: Collectie Overzicht (Dashboard) */}
-                                    {!searchQuery && !activeTag && !activeColor && !currentViewCollection && (
+                                    {!searchQuery && !activeTag && !currentViewCollection && (
                                         <div>
                                             {!activeFolderId && displayedCollections.length === 0 ? (
                                                 <div className="text-center py-32">
