@@ -18,7 +18,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- NIEUW: JSZip & FileSaver voor Client-side generation -->
+    <!-- JSZip & FileSaver voor Client-side generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
@@ -83,11 +83,21 @@
         .toast-exit { transform: translateX(0); opacity: 1; }
         .toast-exit-active { transform: translateX(100%); opacity: 0; transition: all 300ms ease-in; }
 
-        /* Grid vs List Layouts - COMPACTER GEMAAKT (110px min) */
+        /* Grid vs List Layouts */
         .layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.75rem; }
         @media (min-width: 640px) { .layout-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); } }
         
         .layout-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+        /* Edit Mode Styles */
+        .edit-pulse {
+            animation: pulse-border 2s infinite;
+        }
+        @keyframes pulse-border {
+            0% { border-color: rgba(99, 102, 241, 0.4); }
+            50% { border-color: rgba(99, 102, 241, 1); }
+            100% { border-color: rgba(99, 102, 241, 0.4); }
+        }
     </style>
 </head>
 <body>
@@ -174,7 +184,7 @@
         });
     };
 
-    // --- NIEUW: CLIENT SIDE ZIP GENERATOR ---
+    // --- CLIENT SIDE ZIP GENERATOR ---
     const generateAndDownloadZip = async (imageSource, baseName, isUrl = false) => {
         const sizes = [16, 32, 48, 64, 128, 256, 512];
         const zip = new JSZip();
@@ -240,13 +250,9 @@
 
     // --- COMPONENTS ---
 
-    // 1. Sidebar Component (Met Tools & Tags)
-    const Sidebar = ({ folders, activeFolderId, onSelectFolder, onSelectAll, onAddFolder, allIcons, activeTag, onSelectTag, onOpenGenerator }) => {
-        const handleCreateFolder = () => {
-            const name = prompt("Naam van nieuwe map:");
-            if (name) onAddFolder(name);
-        };
-
+    // 1. Sidebar Component (Met Edit Mode)
+    const Sidebar = ({ folders, activeFolderId, onSelectFolder, onSelectAll, onAddFolder, allIcons, activeTag, onSelectTag, onOpenGenerator, isEditMode, toggleEditMode, onRenameFolder, onDeleteFolder }) => {
+        
         const uniqueTags = useMemo(() => {
             const tags = new Set();
             allIcons.forEach(icon => { if (icon.tags) icon.tags.forEach(t => tags.add(t)); });
@@ -291,10 +297,21 @@
 
                     <div className="flex justify-between items-center mb-2 px-2">
                         <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Bibliotheek</div>
-                        <button onClick={handleCreateFolder} className="text-primary hover:text-white transition-colors p-1 hover:bg-slate-700 rounded" title="Nieuwe map">
-                            <Icon name="plus" size={14} />
-                        </button>
+                        <div className="flex gap-1">
+                            {/* EDIT TOGGLE BUTTON */}
+                            <button 
+                                onClick={toggleEditMode} 
+                                className={`p-1.5 rounded transition-colors ${isEditMode ? 'bg-primary text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`} 
+                                title={isEditMode ? "Stop Bewerken" : "Bewerk Mappen"}
+                            >
+                                <Icon name={isEditMode ? "check" : "pencil"} size={14} />
+                            </button>
+                            <button onClick={() => { const n = prompt("Nieuwe map:"); if(n) onAddFolder(n); }} className="text-primary hover:text-white transition-colors p-1.5 hover:bg-slate-700 rounded" title="Nieuwe map">
+                                <Icon name="plus" size={14} />
+                            </button>
+                        </div>
                     </div>
+                    
                     <nav className="space-y-1">
                         <button 
                             onClick={onSelectAll}
@@ -309,18 +326,27 @@
                         </button>
                         <div className="pt-2 pb-2"></div>
                         {folders.map(folder => (
-                            <button 
-                                key={folder.id}
-                                onClick={() => onSelectFolder(folder.id)}
-                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                                    activeFolderId === folder.id
-                                    ? 'bg-slate-800 text-white border border-slate-700' 
-                                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border border-transparent'
-                                }`}
-                            >
-                                <Icon name="folder" size={18} />
-                                {folder.name}
-                            </button>
+                            <div key={folder.id} className="relative group">
+                                <button 
+                                    onClick={() => onSelectFolder(folder.id)}
+                                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                                        activeFolderId === folder.id
+                                        ? 'bg-slate-800 text-white border border-slate-700' 
+                                        : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border border-transparent'
+                                    }`}
+                                >
+                                    <Icon name="folder" size={18} />
+                                    <span className="truncate">{folder.name}</span>
+                                </button>
+
+                                {/* Edit Mode Controls voor Folder */}
+                                {isEditMode && (
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 bg-slate-900 rounded p-1 shadow-md z-10">
+                                        <button onClick={(e) => { e.stopPropagation(); onRenameFolder(folder.id, folder.name); }} className="p-1 hover:text-primary text-slate-400" title="Hernoemen"><Icon name="edit-2" size={12} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder.id); }} className="p-1 hover:text-red-500 text-slate-400" title="Verwijderen"><Icon name="trash" size={12} /></button>
+                                    </div>
+                                )}
+                            </div>
                         ))}
                     </nav>
 
@@ -357,7 +383,7 @@
                                 <span className="text-xs font-bold text-white">IV</span>
                             </div>
                             <div className="flex-1">
-                                <div className="text-xs font-medium text-white">Versie 2.2</div>
+                                <div className="text-xs font-medium text-white">Versie 2.3</div>
                                 <div className="text-[10px] text-green-400 flex items-center gap-1">
                                     <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div> Online
                                 </div>
@@ -369,8 +395,8 @@
         );
     };
 
-    // 2. Collection Card
-    const CollectionCard = ({ collection, icons, onClick, onDropFile }) => {
+    // 2. Collection Card (Met Edit Mode Controls)
+    const CollectionCard = ({ collection, icons, onClick, onDropFile, isEditMode, onRename, onDelete }) => {
         const previewIcons = icons.slice(0, 4);
         const [isDragOver, setIsDragOver] = useState(false);
 
@@ -392,8 +418,21 @@
                 className={`
                     relative hover-lift bg-dark_paper border rounded-2xl p-4 flex flex-col cursor-pointer group h-auto transition-all
                     ${isDragOver ? 'border-primary bg-primary/10 shadow-[0_0_30px_rgba(99,102,241,0.3)]' : 'border-slate-700'}
+                    ${isEditMode ? 'edit-pulse' : ''}
                 `}
             >
+                {/* Edit Overlay - Alleen zichtbaar in Edit Mode */}
+                {isEditMode && (
+                    <div className="absolute top-2 right-2 z-20 flex gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); onRename(collection.id, collection.name); }} className="p-2 bg-slate-800 rounded-full hover:bg-primary text-white shadow-lg border border-slate-600 transition-colors" title="Hernoemen">
+                            <Icon name="edit-2" size={14} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(collection.id); }} className="p-2 bg-slate-800 rounded-full hover:bg-red-500 text-white shadow-lg border border-slate-600 transition-colors" title="Verwijderen">
+                            <Icon name="trash" size={14} />
+                        </button>
+                    </div>
+                )}
+
                 {/* Drag Overlay */}
                 {isDragOver && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-dark_paper/90 rounded-2xl border-2 border-primary border-dashed">
@@ -635,10 +674,10 @@
                     const processed = await processImage(rawFile, singleFormData.size);
                     const autoTag = processed.isSvg ? 'SVG' : Math.max(processed.width, processed.height).toString();
                     
-                    // NIEUW: Extraheer extensie
+                    // Extraheer extensie
                     const extension = processed.fileName.split('.').pop().toUpperCase();
                     const tags = [autoTag];
-                    if (extension && extension !== 'SVG') tags.push(extension); // Voorkom dubbele 'SVG'
+                    if (extension && extension !== 'SVG') tags.push(extension);
                     
                     finalFiles.push({
                         ...processed,
@@ -794,7 +833,7 @@
         // Navigation State
         const [activeFolderId, setActiveFolderId] = useState(null);
         const [activeCollectionId, setActiveCollectionId] = useState(null);
-        const [showGenerator, setShowGenerator] = useState(false); // Nieuwe state
+        const [showGenerator, setShowGenerator] = useState(false);
         
         // Filter & View State
         const [searchQuery, setSearchQuery] = useState('');
@@ -806,6 +845,9 @@
         const [isUploadOpen, setIsUploadOpen] = useState(false);
         const [uploadInitialFiles, setUploadInitialFiles] = useState(null);
         const [targetCollection, setTargetCollection] = useState(null);
+        
+        // NIEUW: Edit Mode State
+        const [isEditMode, setIsEditMode] = useState(false);
 
         const refreshData = async () => {
             try {
@@ -843,6 +885,43 @@
             }
         };
 
+        // NIEUW: RENAME & DELETE HANDLERS
+        const handleRenameFolder = async (id, currentName) => {
+            const newName = prompt("Hernoem map:", currentName);
+            if (newName && newName !== currentName) {
+                await fetch(`${API_URL}/folders/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: newName }) });
+                refreshData();
+                toast("Map hernoemd");
+            }
+        };
+
+        const handleDeleteFolder = async (id) => {
+            if (confirm("Weet je het zeker? Alle collecties en iconen in deze map worden ook verwijderd!")) {
+                await fetch(`${API_URL}/folders/${id}`, { method: 'DELETE' });
+                refreshData(); 
+                if (activeFolderId === id) setActiveFolderId(null);
+                toast("Map verwijderd", 'error');
+            }
+        };
+
+        const handleRenameCollection = async (id, currentName) => {
+            const newName = prompt("Hernoem collectie:", currentName);
+            if (newName && newName !== currentName) {
+                await fetch(`${API_URL}/collections/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: newName }) });
+                refreshData();
+                toast("Collectie hernoemd");
+            }
+        };
+
+        const handleDeleteCollection = async (id) => {
+            if (confirm("Weet je het zeker? Alle iconen in deze collectie worden verwijderd.")) {
+                await fetch(`${API_URL}/collections/${id}`, { method: 'DELETE' });
+                refreshData();
+                if (activeCollectionId === id) setActiveCollectionId(null);
+                toast("Collectie verwijderd", 'error');
+            }
+        };
+
         const handleDeleteIcon = async (id) => {
             if(confirm('Weet je zeker dat je dit icoon wilt verwijderen?')) {
                 const res = await fetch(`${API_URL}/icons/${id}`, { method: 'DELETE' });
@@ -853,7 +932,6 @@
             }
         };
 
-        // COPY FIX: Fallback voor onveilige contexten
         const handleCopyCode = async (url) => {
             const fullUrl = window.location.origin + url;
             const code = `<img src="${fullUrl}" alt="icon" />`;
@@ -862,6 +940,7 @@
                 await navigator.clipboard.writeText(code);
                 toast('HTML code gekopieerd');
             } catch (err) {
+                // Fallback
                 const textArea = document.createElement("textarea");
                 textArea.value = code;
                 textArea.style.position = "fixed";
@@ -962,6 +1041,11 @@
                     activeTag={activeTag}
                     onSelectTag={selectTag}
                     onOpenGenerator={openGenerator}
+                    // Edit Props
+                    isEditMode={isEditMode}
+                    toggleEditMode={() => setIsEditMode(!isEditMode)}
+                    onRenameFolder={handleRenameFolder}
+                    onDeleteFolder={handleDeleteFolder}
                 />
 
                 <main className="flex-1 md:ml-64 flex flex-col h-full overflow-hidden relative">
@@ -1117,6 +1201,10 @@
                                                                 icons={colIcons} 
                                                                 onClick={() => setActiveCollectionId(col.id)}
                                                                 onDropFile={handleCollectionDrop}
+                                                                // Edit props doorgeven
+                                                                isEditMode={isEditMode}
+                                                                onRename={handleRenameCollection}
+                                                                onDelete={handleDeleteCollection}
                                                             />
                                                         );
                                                     })}
