@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IconVault Pro - Optimized & Full</title>
+    <title>IconVault Pro - Fixed Scroll</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -75,7 +75,7 @@
 
     const API_URL = '/api';
 
-    // --- HOOK: DEBOUNCE (Voorkomt vastlopen tijdens typen) ---
+    // --- HOOK: DEBOUNCE ---
     function useDebounce(value, delay) {
         const [debouncedValue, setDebouncedValue] = useState(value);
         useEffect(() => {
@@ -85,7 +85,7 @@
         return debouncedValue;
     }
 
-    // --- CONTEXT: TOAST NOTIFICATIES ---
+    // --- CONTEXT: TOAST ---
     const ToastContext = createContext();
     const ToastProvider = ({ children }) => {
         const [toasts, setToasts] = useState([]);
@@ -141,7 +141,6 @@
         });
     };
 
-    // HERSTELD: Zip Generator Logic
     const generateAndDownloadZip = async (imageSource, baseName, isUrl = false) => {
         const sizes = [16, 32, 48, 64, 128, 256, 512];
         const zip = new JSZip();
@@ -184,7 +183,7 @@
 
     // --- COMPONENTS ---
 
-    // 1. Sidebar (HERSTELD: Generator knop)
+    // 1. Sidebar
     const Sidebar = React.memo(({ folders, activeFolderId, onSelectFolder, onSelectAll, onAddFolder, allIcons, activeTag, onSelectTag, onOpenGenerator, isEditMode, toggleEditMode, onRenameFolder, onDeleteFolder }) => {
         const uniqueTags = useMemo(() => {
             const tags = new Set();
@@ -311,7 +310,7 @@
         );
     });
 
-    // 3. Icon Card - OPTIMIZED WITH MEMO
+    // 3. Icon Card
     const IconCard = React.memo(({ icon, onDelete, viewMode, onCopy }) => {
         if (viewMode === 'list') {
             return (
@@ -351,7 +350,7 @@
         );
     });
 
-    // 4. GENERATOR VIEW (HERSTELD)
+    // 4. GENERATOR VIEW
     const GeneratorView = () => {
         const [activeFile, setActiveFile] = useState(null);
         const [isProcessing, setIsProcessing] = useState(false);
@@ -504,7 +503,7 @@
         
         const [activeFolderId, setActiveFolderId] = useState(null);
         const [activeCollectionId, setActiveCollectionId] = useState(null);
-        const [showGenerator, setShowGenerator] = useState(false); // HERSTELD
+        const [showGenerator, setShowGenerator] = useState(false);
         
         const [searchQuery, setSearchQuery] = useState('');
         const debouncedSearch = useDebounce(searchQuery, 300);
@@ -527,15 +526,18 @@
 
         useEffect(() => { refreshData(); }, []);
 
+        // Reset limit on navigation
         useEffect(() => { setVisibleLimit(50); }, [debouncedSearch, activeTag, activeFolderId, activeCollectionId, sortBy]);
 
+        // FIX: Observer dependencies bijgewerkt (activeCollectionId etc.)
         useEffect(() => {
             const observer = new IntersectionObserver((entries) => {
                 if (entries[0].isIntersecting) { setVisibleLimit(prev => prev + 50); }
-            }, { threshold: 0.5 });
+            }, { rootMargin: '200px' });
+            
             if (loadMoreRef.current) observer.observe(loadMoreRef.current);
             return () => observer.disconnect();
-        }, [data.icons, debouncedSearch]);
+        }, [visibleLimit, activeCollectionId, activeFolderId, activeTag, debouncedSearch, data.icons]); 
 
         const activeFolder = data.folders.find(f => f.id === activeFolderId);
         const currentViewCollection = data.collections.find(c => c.id === activeCollectionId);
@@ -545,7 +547,7 @@
             resetNavigation: useCallback(() => { setActiveFolderId(null); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(false); }, []),
             selectFolder: useCallback((fid) => { setActiveFolderId(fid); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(false); }, []),
             selectTag: useCallback((tag) => { setActiveTag(tag); setActiveFolderId(null); setActiveCollectionId(null); setSearchQuery(''); setShowGenerator(false); }, []),
-            openGenerator: useCallback(() => { setActiveFolderId(null); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(true); }, []), // HERSTELD
+            openGenerator: useCallback(() => { setActiveFolderId(null); setActiveCollectionId(null); setActiveTag(null); setSearchQuery(''); setShowGenerator(true); }, []),
             handleAddFolder: async (name) => { await fetch(`${API_URL}/folders`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) }); refreshData(); toast(`Map '${name}' aangemaakt`); },
             handleDeleteFolder: async (id) => { if(confirm("Zeker weten?")) { await fetch(`${API_URL}/folders/${id}`, { method: 'DELETE' }); refreshData(); if(activeFolderId===id) setActiveFolderId(null); toast("Map verwijderd", 'error'); } },
             handleRenameFolder: async (id, name) => { const n = prompt("Nieuwe naam:", name); if(n && n!==name) { await fetch(`${API_URL}/folders/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: n }) }); refreshData(); } },
