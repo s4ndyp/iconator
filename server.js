@@ -29,8 +29,9 @@ function loadDB() {
             db = JSON.parse(data);
         } catch (e) { console.error("DB Load Error", e); }
     } else {
+        // Defaults als er nog niets is
         db.folders = [{ id: 'f1', name: "Demo Map", icon: "folder" }];
-        db.collections = [{ id: 'c1', folderId: 'f1', name: "General", description: "Start collectie" }];
+        db.collections = [{ id: 'c1', folderId: 'f1', name: "Algemeen", description: "Start collectie" }];
         saveDB();
     }
 }
@@ -40,10 +41,11 @@ function saveDB() {
 
 loadDB();
 
-// --- MULTER CONFIG ---
+// --- MULTER CONFIG (Bestandsopslag) ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const colId = req.body.collectionId || 'default';
+        // Sla op in een map per collectie om het netjes te houden
+        const colId = req.body.collectionId || 'unsorted';
         const dir = path.join(UPLOAD_ROOT_DIR, colId);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
@@ -77,7 +79,7 @@ app.put('/api/folders/:id', (req, res) => {
 });
 app.delete('/api/folders/:id', (req, res) => {
     const id = req.params.id;
-    // Verwijder folder, collecties en iconen cascade
+    // Cascade delete: verwijder ook alle collecties en iconen in deze map
     const cols = db.collections.filter(c => c.folderId === id);
     cols.forEach(c => {
         const icons = db.icons.filter(i => i.collectionId === c.id);
@@ -112,21 +114,25 @@ app.delete('/api/collections/:id', (req, res) => {
     res.json({success: true});
 });
 
-// 4. UPLOAD
+// 4. UPLOAD & DELETE ICONS
 app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'Geen bestand' });
 
-    const collectionId = req.body.collectionId;
-    const folderId = req.body.folderId;
+    // Check op duplicaten (optioneel, nu toegestaan maar we kunnen waarschuwen in de frontend)
+    const desiredName = req.body.iconName || req.file.originalname;
+    
+    // Simpele naam opschonen voor database (niet voor bestandssysteem, dat doet multer)
+    const displayName = desiredName.split('.')[0]; 
+
     const width = parseInt(req.body.width) || 0;
     const height = parseInt(req.body.height) || 0;
     const tags = req.body.iconTags ? req.body.iconTags.split(',') : [];
 
     const newIcon = {
         id: 'i' + Date.now() + Math.random().toString(36).substr(2, 5),
-        collectionId: collectionId,
-        folderId: folderId, // Denormalisatie voor sneller filteren
-        name: req.body.iconName || req.file.originalname,
+        collectionId: req.body.collectionId,
+        folderId: req.body.folderId,
+        name: displayName, // Opslaan als leesbare naam zonder extensie
         originalName: req.file.originalname,
         fileName: req.file.filename,
         filePath: req.file.path,
@@ -136,7 +142,7 @@ app.post('/api/upload-icon', upload.single('iconFile'), (req, res) => {
         height: height,
         tags: tags,
         dateAdded: new Date().toISOString(),
-        url: `/uploads/${collectionId}/${req.file.filename}` 
+        url: `/uploads/${req.body.collectionId}/${req.file.filename}` 
     };
 
     db.icons.push(newIcon);
@@ -159,66 +165,71 @@ app.delete('/api/icons/:id', (req, res) => {
     }
 });
 
-// --- NIEUWE SLIMME SERVE FUNCTIE ---
+// --- DE SLIMME ZOEKROUTE ---
 app.get('/api/serve-icon/:query', (req, res) => {
-    const query = req.params.query.toLowerCase();
+    const query = req.params.query.toLowerCase().trim();
     
-    // 1. Probeer extensie te detecteren (bijv. "huis.svg")
+    // 1. Analyseer de zoekopdracht: zoekt de gebruiker naar een extensie?
     const parts = query.split('.');
     let requestedExt = null;
     let searchName = query;
     
     if (parts.length > 1) {
-        requestedExt = '.' + parts.pop(); // haal laatste deel weg (.svg)
-        searchName = parts.join('.'); // de rest is de naam
+        // Als er een punt in zit (bijv "huis.svg"), splitsen we het
+        requestedExt = '.' + parts.pop(); 
+        searchName = parts.join('.'); 
     }
 
-    // 2. Score alle iconen
+    // 2. Geef elk icoon in de database een score
     const candidates = db.icons.map(icon => {
         let score = 0;
-        const dbName = icon.name.toLowerCase();
-        const dbExt = path.extname(icon.originalName).toLowerCase();
+        const dbName = icon.name.toLowerCase(); // De naam in de app (vaak zonder extensie)
+        const dbOriginalName = icon.originalName ? icon.originalName.toLowerCase() : "";
+        const dbExt = path.extname(icon.filePath).toLowerCase();
 
-        // SCORING LOGICA
-        if (dbName === searchName) score += 100;           // Exacte naam match
-        else if (dbName === query) score += 100;           // Exacte match inclusief extensie input
-        else if (dbName.startsWith(searchName)) score += 50; // Begint met...
-        else if (dbName.includes(searchName)) score += 20;   // Bevat...
-
-        if (requestedExt && dbExt === requestedExt) score += 50; // Gebruiker vroeg specifiek formaat (bijv .svg)
+        // SCORING REGELS
         
-        // Bonus voor vectoren als er geen specifieke extensie gevraagd is
-        if (!requestedExt && dbExt === '.svg') score += 10; 
+        // Regel A: Naam match
+        if (dbName === searchName) score += 100;                // Exacte match ("huis" == "huis")
+        else if (dbOriginalName === query) score += 100;        // Exacte bestandsnaam ("huis.png" == "huis.png")
+        else if (dbName === query) score += 90;                 // Naam matcht volledige query
+        else if (dbName.startsWith(searchName)) score += 50;    // Begint ermee ("huis" matcht "huisje")
+        else if (dbName.includes(searchName)) score += 20;      // Zit erin ("ui" matcht "huis")
+
+        // Regel B: Extensie match
+        if (requestedExt) {
+            if (dbExt === requestedExt) score += 50;            // Gebruiker wil .svg en bestand is .svg
+            else score -= 10;                                   // Gebruiker wil .svg maar bestand is .png (strafpunten)
+        } else {
+            // Als gebruiker GEEN extensie noemt, geef voorkeur aan SVG (vector)
+            if (dbExt === '.svg') score += 10; 
+        }
 
         return { icon, score };
     });
 
-    // 3. Filter alleen relevante resultaten en sorteer op score
-    // We willen alleen resultaten die enige relevantie hebben (score > 0)
+    // 3. Sorteer op score (hoogste eerst) en pak de beste
     const bestMatches = candidates
-        .filter(c => c.score > 0)
+        .filter(c => c.score > 0) // Alleen resultaten die ergens op slaan
         .sort((a, b) => b.score - a.score);
 
-    // 4. Serveer de winnaar
+    // 4. Serveer het resultaat
     if (bestMatches.length > 0) {
         const winner = bestMatches[0].icon;
         
-        // Optioneel: Logica als er twijfel is (bijv. logging)
-        // console.log(`Served ${winner.name} (Score: ${bestMatches[0].score}) for query "${query}"`);
-
         if (fs.existsSync(winner.filePath)) {
             res.sendFile(path.resolve(winner.filePath));
         } else {
-            res.status(404).send('Bestand fysiek niet gevonden');
+            // Database zegt dat het er is, maar bestand is weg
+            res.status(404).send('Bestand corrupt of verwijderd van server.');
         }
     } else {
-        // Fallback: Misschien een standaard placeholder?
-        res.status(404).send('Geen icoon gevonden dat matcht met: ' + query);
+        res.status(404).send(`Geen icoon gevonden voor '${query}'`);
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`- API: http://localhost:${PORT}/api/data`);
-    console.log(`- Smart Serve: http://localhost:${PORT}/api/serve-icon/:name`);
+    console.log(`Server draait op http://localhost:${PORT}`);
+    console.log(`- API Data: http://localhost:${PORT}/api/data`);
+    console.log(`- Smart Serve: http://localhost:${PORT}/api/serve-icon/<naam>`);
 });
