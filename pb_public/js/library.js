@@ -12,12 +12,12 @@ function setStatus(message, isError = false) {
   statusEl.classList.toggle("error", isError);
 }
 
-function formatDate(value) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat("nl-NL", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 async function copyText(text) {
@@ -50,31 +50,41 @@ function render() {
 
   for (const record of items) {
     const url = iconFileUrl(record);
-    const card = document.createElement("article");
-    card.className = "icon-card";
-    card.innerHTML = `
-      <div class="icon-card-preview ${record.mask === "round" ? "round" : ""}">
-        <img src="${url}" alt="${record.name || "Icoon"}" loading="lazy" />
+    const name = record.name || "Naamloos icoon";
+    const maskClass = record.mask === "round" ? "round" : "square";
+
+    const tile = document.createElement("article");
+    tile.className = "icon-tile";
+    tile.innerHTML = `
+      <div class="icon-tile-visual ${maskClass}">
+        <img src="${url}" alt="${escapeHtml(name)}" loading="lazy" />
+        <div class="icon-tile-overlay">
+          <button type="button" class="icon-tile-btn copy-link" title="Kopieer link">
+            <span aria-hidden="true">⎘</span>
+            <span class="icon-tile-btn-label">Link</span>
+          </button>
+          <button type="button" class="icon-tile-btn delete-btn" title="Verwijderen">
+            <span aria-hidden="true">×</span>
+            <span class="icon-tile-btn-label">Wis</span>
+          </button>
+        </div>
       </div>
-      <h3 title="${record.name || "Naamloos icoon"}">${record.name || "Naamloos icoon"}</h3>
-      <p class="meta">${record.transparent ? "Transparant" : "Normaal"} · ${record.mask === "round" ? "Rond" : "Vierkant"} · ${formatDate(record.created)}</p>
-      <div class="actions">
-        <button type="button" class="btn btn-secondary copy-link">Kopieer link</button>
-        <button type="button" class="btn btn-ghost delete-btn" title="Verwijderen">×</button>
-      </div>
+      <h3 class="icon-tile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</h3>
     `;
 
-    card.querySelector(".copy-link").addEventListener("click", async () => {
+    tile.querySelector(".copy-link").addEventListener("click", async (event) => {
+      event.stopPropagation();
       try {
         await copyText(url);
         setStatus("Link gekopieerd naar het klembord.");
-      } catch (error) {
+      } catch {
         setStatus("Kopiëren mislukt.", true);
       }
     });
 
-    card.querySelector(".delete-btn").addEventListener("click", async () => {
-      if (!confirm(`"${record.name || "Dit icoon"}" verwijderen?`)) return;
+    tile.querySelector(".delete-btn").addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!confirm(`"${name}" verwijderen?`)) return;
       try {
         await deleteIconRecord(record.id);
         records = records.filter((item) => item.id !== record.id);
@@ -85,7 +95,7 @@ function render() {
       }
     });
 
-    grid.appendChild(card);
+    grid.appendChild(tile);
   }
 }
 

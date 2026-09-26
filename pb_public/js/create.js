@@ -18,6 +18,7 @@ const zipBtn = document.getElementById("zipBtn");
 const statusEl = document.getElementById("status");
 const maskButtons = [...document.querySelectorAll("[data-mask]")];
 const modeButtons = [...document.querySelectorAll("[data-mode]")];
+const fillButtons = [...document.querySelectorAll("[data-fill]")];
 
 canvas.width = VIEW_SIZE;
 canvas.height = VIEW_SIZE;
@@ -31,6 +32,7 @@ let dragging = false;
 let lastPointer = { x: 0, y: 0 };
 let maskType = "round";
 let transparentMode = true;
+let frameFill = "none";
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -145,6 +147,10 @@ function renderExportCanvas(exportSize = DEFAULT_EXPORT_SIZE) {
 
   octx.save();
   applyClip(octx, clip, ratio);
+  if (frameFill === "black" || frameFill === "white") {
+    octx.fillStyle = frameFill === "black" ? "#000000" : "#ffffff";
+    octx.fillRect(0, 0, exportSize, exportSize);
+  }
   octx.drawImage(
     image,
     offsetX * ratio,
@@ -325,6 +331,14 @@ modeButtons.forEach((button) => {
     transparentMode = button.dataset.mode === "transparent";
     modeButtons.forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
     thresholdInput.disabled = !transparentMode;
+    drawEditor();
+  });
+});
+
+fillButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    frameFill = button.dataset.fill;
+    fillButtons.forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
     drawEditor();
   });
 });

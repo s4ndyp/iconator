@@ -62,6 +62,16 @@
         </div>
 
         <div class="field">
+          <label>Lege ruimte in het kader</label>
+          <div class="control-row">
+            <button type="button" class="btn btn-ghost active" data-fill="none" aria-pressed="true">Transparant</button>
+            <button type="button" class="btn btn-ghost" data-fill="black" aria-pressed="false">Zwart</button>
+            <button type="button" class="btn btn-ghost" data-fill="white" aria-pressed="false">Wit</button>
+          </div>
+          <p class="muted">Vult ruimte rond een kleinere afbeelding binnen het masker.</p>
+        </div>
+
+        <div class="field">
           <label for="threshold">Zwarte achtergrond filter (<span id="thresholdValue">35%</span>)</label>
           <input id="threshold" type="range" min="0" max="100" value="35">
           <p class="muted">Alleen actief bij transparant. Hoger = meer zwart wordt transparant.</p>
