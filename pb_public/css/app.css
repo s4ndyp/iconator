@@ -220,8 +220,13 @@ body::before {
   border: 1px solid var(--line);
 }
 
-.btn-ghost.active,
-.btn-ghost[aria-pressed="true"] {
+.toggle-group .btn-ghost {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--line);
+}
+
+.toggle-group .btn-ghost.is-selected {
   color: var(--text);
   border-color: rgba(110, 231, 255, 0.45);
   background: rgba(110, 231, 255, 0.08);

@@ -47,24 +47,24 @@
 
         <div class="field">
           <label>Masker</label>
-          <div class="control-row">
-            <button type="button" class="btn btn-ghost active" data-mask="round" aria-pressed="true">Rond</button>
+          <div class="control-row toggle-group" role="group" aria-label="Masker">
+            <button type="button" class="btn btn-ghost" data-mask="round" aria-pressed="true">Rond</button>
             <button type="button" class="btn btn-ghost" data-mask="square" aria-pressed="false">Vierkant</button>
           </div>
         </div>
 
         <div class="field">
           <label>Weergave</label>
-          <div class="control-row">
-            <button type="button" class="btn btn-ghost active" data-mode="transparent" aria-pressed="true">Transparant</button>
+          <div class="control-row toggle-group" role="group" aria-label="Weergave">
+            <button type="button" class="btn btn-ghost" data-mode="transparent" aria-pressed="true">Transparant</button>
             <button type="button" class="btn btn-ghost" data-mode="normal" aria-pressed="false">Normaal</button>
           </div>
         </div>
 
         <div class="field">
           <label>Lege ruimte in het kader</label>
-          <div class="control-row">
-            <button type="button" class="btn btn-ghost active" data-fill="none" aria-pressed="true">Transparant</button>
+          <div class="control-row toggle-group" role="group" aria-label="Lege ruimte">
+            <button type="button" class="btn btn-ghost" data-fill="none" aria-pressed="true">Transparant</button>
             <button type="button" class="btn btn-ghost" data-fill="black" aria-pressed="false">Zwart</button>
             <button type="button" class="btn btn-ghost" data-fill="white" aria-pressed="false">Wit</button>
           </div>
@@ -91,6 +91,6 @@
   </div>
 
   <script src="/js/vendor/jszip.min.js"></script>
-  <script type="module" src="/js/create.js"></script>
+  <script type="module" src="/js/create.js?v=3"></script>
 </body>
 </html>
