@@ -70,8 +70,10 @@
         <div class="control-row">
           <img id="exportPreview" class="preview-thumb" alt="Voorbeeld export">
           <div class="spacer"></div>
+          <button id="zipBtn" type="button" class="btn btn-secondary" disabled>Exporteer ZIP</button>
           <button id="saveBtn" type="button" class="btn btn-primary" disabled>Opslaan in bibliotheek</button>
         </div>
+        <p class="muted">ZIP bevat PNG’s in 16 t/m 512 px (o.a. 48, 72, 96, 144, 192, 256, 512).</p>
 
         <p id="status" class="status" role="status"></p>
       </section>
@@ -79,6 +81,7 @@
   </div>
 
   <script src="https://unpkg.com/pocketbase@0.25.8/dist/pocketbase.umd.js"></script>
+  <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
   <script type="module" src="/js/create.js"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@ Gebaseerd op het tinynote-deploypatroon: één PocketBase-container, frontend in
 ## Functies
 
 - **Startpagina** met keuze tussen icoon maken en bibliotheek
-- **Icoon maken**: rond of vierkant masker, slepen/zoomen, zwarte-achtergrondfilter (slider), transparant of normaal
+- **Icoon maken**: rond of vierkant masker, slepen/zoomen, zwarte-achtergrondfilter (slider), transparant of normaal, **ZIP-export** met standaard formaten (16–512 px)
 - **Bibliotheek**: grid met previews, zoeken, link kopiëren, verwijderen
 
 ## PocketBase collectie
