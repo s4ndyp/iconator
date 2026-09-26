@@ -16,9 +16,9 @@ const previewImg = document.getElementById("exportPreview");
 const saveBtn = document.getElementById("saveBtn");
 const zipBtn = document.getElementById("zipBtn");
 const statusEl = document.getElementById("status");
-const maskButtons = [...document.querySelectorAll("[data-mask]")];
-const modeButtons = [...document.querySelectorAll("[data-mode]")];
-const fillButtons = [...document.querySelectorAll("[data-fill]")];
+const maskButtons = [...document.querySelectorAll(".toggle-group [data-mask]")];
+const modeButtons = [...document.querySelectorAll(".toggle-group [data-mode]")];
+const fillButtons = [...document.querySelectorAll(".toggle-group [data-fill]")];
 
 canvas.width = VIEW_SIZE;
 canvas.height = VIEW_SIZE;
@@ -48,8 +48,24 @@ function setToggleGroup(buttons, selected) {
   buttons.forEach((button) => {
     const on = button === selected;
     button.setAttribute("aria-pressed", on ? "true" : "false");
-    button.classList.toggle("active", on);
+    button.classList.remove("active", "is-selected");
+    if (on) button.classList.add("is-selected");
   });
+}
+
+function syncAllToggleGroups() {
+  setToggleGroup(
+    maskButtons,
+    maskButtons.find((button) => button.dataset.mask === maskType)
+  );
+  setToggleGroup(
+    modeButtons,
+    modeButtons.find((button) => button.dataset.mode === (transparentMode ? "transparent" : "normal"))
+  );
+  setToggleGroup(
+    fillButtons,
+    fillButtons.find((button) => button.dataset.fill === frameFill)
+  );
 }
 
 function fitImageToStage() {
@@ -326,7 +342,7 @@ thresholdInput.addEventListener("input", () => {
 maskButtons.forEach((button) => {
   button.addEventListener("click", () => {
     maskType = button.dataset.mask;
-    maskButtons.forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
+    setToggleGroup(maskButtons, button);
     maskRing.classList.toggle("round", maskType === "round");
     maskRing.classList.toggle("square", maskType === "square");
     fitImageToStage();
@@ -337,7 +353,7 @@ maskButtons.forEach((button) => {
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
     transparentMode = button.dataset.mode === "transparent";
-    modeButtons.forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
+    setToggleGroup(modeButtons, button);
     thresholdInput.disabled = !transparentMode;
     drawEditor();
   });
@@ -346,7 +362,7 @@ modeButtons.forEach((button) => {
 fillButtons.forEach((button) => {
   button.addEventListener("click", () => {
     frameFill = button.dataset.fill;
-    fillButtons.forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
+    setToggleGroup(fillButtons, button);
     drawEditor();
   });
 });
@@ -378,4 +394,5 @@ saveBtn.addEventListener("click", async () => {
 
 zipBtn.addEventListener("click", exportIconZip);
 
+syncAllToggleGroups();
 drawEditor();
