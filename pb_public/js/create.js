@@ -2,7 +2,7 @@ import { createIconRecord } from "./pb.js";
 
 const VIEW_SIZE = 360;
 const DEFAULT_EXPORT_SIZE = 512;
-const ICON_SIZES = [16, 32, 48, 72, 96, 128, 144, 152, 167, 180, 192, 256, 384, 512];
+const ICON_SIZES = [32, 128, 192, 256, 512];
 
 const stage = document.getElementById("editorStage");
 const canvas = document.getElementById("editorCanvas");
@@ -101,13 +101,16 @@ function drawEditor() {
 
   setActionsEnabled(true);
   const clip = getClipRect();
+  const framed = renderExportCanvas(VIEW_SIZE);
 
   drawImageOnContext(ctx, 1, 0.28);
 
-  ctx.save();
-  applyClip(ctx, clip);
-  drawImageOnContext(ctx, 1, 1);
-  ctx.restore();
+  if (framed) {
+    ctx.save();
+    applyClip(ctx, clip);
+    ctx.drawImage(framed, 0, 0);
+    ctx.restore();
+  }
 
   updateExportPreview();
 }
