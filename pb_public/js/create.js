@@ -44,6 +44,14 @@ function setActionsEnabled(enabled) {
   zipBtn.disabled = !enabled;
 }
 
+function setToggleGroup(buttons, selected) {
+  buttons.forEach((button) => {
+    const on = button === selected;
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.classList.toggle("active", on);
+  });
+}
+
 function fitImageToStage() {
   if (!image) return;
   const padding = maskType === "square" ? VIEW_SIZE * 0.16 : 0;
