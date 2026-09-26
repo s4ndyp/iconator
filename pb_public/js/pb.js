@@ -1,13 +1,23 @@
-const pb = new window.PocketBase(window.location.origin);
+let pbInstance;
+
+function getPb() {
+  if (!pbInstance) {
+    if (!window.PocketBase) {
+      throw new Error("PocketBase kon niet worden geladen.");
+    }
+    pbInstance = new window.PocketBase(window.location.origin);
+  }
+  return pbInstance;
+}
 
 export function iconFileUrl(record) {
   if (!record?.id || !record?.icon) return "";
-  return pb.files.getURL(record, record.icon);
+  return getPb().files.getURL(record, record.icon);
 }
 
 export async function listIcons(options = {}) {
   const { page = 1, perPage = 60, filter = "" } = options;
-  return pb.collection("icons").getList(page, perPage, {
+  return getPb().collection("icons").getList(page, perPage, {
     sort: "-created",
     filter,
   });
@@ -19,11 +29,9 @@ export async function createIconRecord({ name, blob, mask, transparent }) {
   form.append("mask", mask);
   form.append("transparent", transparent ? "true" : "false");
   form.append("icon", blob, "icon.png");
-  return pb.collection("icons").create(form);
+  return getPb().collection("icons").create(form);
 }
 
 export async function deleteIconRecord(id) {
-  return pb.collection("icons").delete(id);
+  return getPb().collection("icons").delete(id);
 }
-
-export { pb };
