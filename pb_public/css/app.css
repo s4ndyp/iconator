@@ -352,7 +352,6 @@ body::before {
 
 .mask-ring.square {
   border-radius: 0.35rem;
-  inset: 8%;
 }
 
 .controls-panel {

@@ -68,22 +68,35 @@ function syncAllToggleGroups() {
   );
 }
 
-function fitImageToStage() {
-  if (!image) return;
-  const padding = maskType === "square" ? VIEW_SIZE * 0.16 : 0;
-  const inner = VIEW_SIZE - padding * 2;
-  const fit = Math.min(inner / image.width, inner / image.height);
-  scale = fit;
-  offsetX = (VIEW_SIZE - image.width * scale) / 2;
-  offsetY = (VIEW_SIZE - image.height * scale) / 2;
+function getClipRect() {
+  return { x: 0, y: 0, w: VIEW_SIZE, h: VIEW_SIZE, round: maskType === "round" };
 }
 
-function getClipRect() {
-  if (maskType === "round") {
-    return { x: 0, y: 0, w: VIEW_SIZE, h: VIEW_SIZE, round: true };
+function getScaleLimits() {
+  const clip = getClipRect();
+  if (!image) {
+    return { min: 0.05, max: 8 };
   }
-  const inset = VIEW_SIZE * 0.08;
-  return { x: inset, y: inset, w: VIEW_SIZE - inset * 2, h: VIEW_SIZE - inset * 2, round: false };
+  const containScale = Math.min(clip.w / image.width, clip.h / image.height);
+  const coverScale = Math.max(clip.w / image.width, clip.h / image.height);
+  return {
+    min: Math.max(0.01, containScale * 0.2),
+    max: Math.max(coverScale * 3, containScale * 12, 1),
+  };
+}
+
+function fitImageToStage() {
+  if (!image) return;
+  const clip = getClipRect();
+  const fit = Math.min(clip.w / image.width, clip.h / image.height);
+  scale = fit;
+  offsetX = clip.x + (clip.w - image.width * scale) / 2;
+  offsetY = clip.y + (clip.h - image.height * scale) / 2;
+}
+
+function clampScale(nextScale) {
+  const { min, max } = getScaleLimits();
+  return Math.min(max, Math.max(min, nextScale));
 }
 
 function applyClip(context, clip, scaleFactor = 1) {
@@ -321,7 +334,7 @@ stage.addEventListener(
     const delta = event.deltaY > 0 ? 0.92 : 1.08;
     const pos = pointerPos(event);
     const prevScale = scale;
-    scale = Math.min(8, Math.max(0.05, scale * delta));
+    scale = clampScale(scale * delta);
     offsetX = pos.x - ((pos.x - offsetX) * scale) / prevScale;
     offsetY = pos.y - ((pos.y - offsetY) * scale) / prevScale;
     drawEditor();
